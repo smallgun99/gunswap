@@ -3,7 +3,6 @@
 
 export default async function handler(request, response) {
   // 從前端請求的 URL 中獲取所有查詢參數
-  // 例如：?chainId=137&sellToken=...
   const queryString = request.url.split('?')[1];
   
   if (!queryString) {
@@ -25,15 +24,21 @@ export default async function handler(request, response) {
       },
     });
 
+    const responseBody = await apiResponse.text();
     // 檢查 0x API 是否回傳錯誤
     if (!apiResponse.ok) {
-        const errorData = await apiResponse.json();
+        let errorData;
+        try {
+            errorData = JSON.parse(responseBody);
+        } catch(e) {
+            errorData = { reason: responseBody };
+        }
         // 將 0x 的錯誤訊息回傳給前端
         return response.status(apiResponse.status).json(errorData);
     }
     
     // 如果成功，將 0x 的回傳結果回傳給前端
-    const data = await apiResponse.json();
+    const data = JSON.parse(responseBody);
     response.status(200).json(data);
 
   } catch (error) {
@@ -41,3 +46,4 @@ export default async function handler(request, response) {
     response.status(500).json({ error: 'Internal Server Error' });
   }
 }
+
