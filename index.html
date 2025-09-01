@@ -37,10 +37,7 @@
         const DAI_ADDRESS = '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063';
         const WETH_DECIMALS = 18;
         const DAI_DECIMALS = 18;
-        // 【更新】直接將 API Key 寫入程式碼
-        const OX_API_KEY = 'd934b953-65b4-4e0c-8935-ac203f634f9b';
         
-        // WETH ERC20 合約的最小 ABI (Application Binary Interface)
         const WETH_ABI = [
             "function allowance(address owner, address spender) view returns (uint256)",
             "function approve(address spender, uint256 amount) returns (bool)",
@@ -64,7 +61,6 @@
 
             // --- 核心功能函式 ---
 
-            // 1. 連接錢包
             const connectWallet = async () => {
                 if (typeof window.ethereum === 'undefined') {
                     setMessage({ text: '錯誤：請安裝 MetaMask 並重新整理頁面！', type: 'error' });
@@ -93,7 +89,6 @@
                 }
             };
 
-            // 2. 取得報價並檢查授權
             const getQuoteAndCheck = async () => {
                 if (!sellAmount || parseFloat(sellAmount) <= 0 || !signer) {
                     setMessage({ text: '請輸入有效的賣出數量', type: 'error' });
@@ -117,21 +112,16 @@
                         taker: userAddress
                     });
                     
-                    const url = `https://api.0x.org/swap/permit2/quote?${params}`;
+                    // 【最終修正】請求我們自己的後端代理 API
+                    const url = `/api/quote?${params}`;
 
-                    const response = await fetch(url, {
-                        headers: {
-                            '0x-api-key': OX_API_KEY,
-                            '0x-version': 'v2' // 【最終修正】根據官方文件，加回此標頭
-                        }
-                    });
+                    // 我們的前端不再需要 API Key 或特殊標頭
+                    const response = await fetch(url);
 
-                    // 【更新】更強大的錯誤處理機制
                     if (!response.ok) {
                         const responseText = await response.text();
                         let reason = responseText;
                         try {
-                            // 嘗試解析為 JSON 以取得更詳細的錯誤
                             const errorData = JSON.parse(responseText);
                             if (errorData.reason) {
                                 reason = `${errorData.reason}.`;
@@ -139,9 +129,7 @@
                                    reason += ` 詳細資訊: ${errorData.validationErrors[0].description}`;
                                 }
                             }
-                        } catch (e) {
-                            // 如果回傳的不是 JSON，直接顯示文字
-                        }
+                        } catch (e) {}
                         throw new Error(`獲取報價失敗 (錯誤 ${response.status}): ${reason}`);
                     }
 
@@ -168,7 +156,6 @@
                 }
             };
 
-            // 3. 授權 Permit2 合約
             const approvePermit2 = async () => {
                 if (!quote) return;
                 setIsLoading(true);
@@ -193,7 +180,6 @@
                 }
             };
             
-            // 4. 簽名並執行交換
             const signAndSwap = async () => {
                 if (!quote) return;
                 setIsLoading(true);
@@ -227,13 +213,12 @@
 
                 } catch (error) {
                     console.error(error);
-setMessage({ text: `簽名或交換失敗: ${error.message}`, type: 'error' });
+                    setMessage({ text: `簽名或交換失敗: ${error.message}`, type: 'error' });
                 } finally {
                     setIsLoading(false);
                 }
             };
             
-            // --- UI 渲染邏輯 ---
             const getButtonAction = () => {
                 if (!userAddress) return { text: '連接錢包', action: connectWallet, disabled: false };
                 if (isLoading) return { text: '處理中...', action: () => {}, disabled: true };
@@ -264,7 +249,6 @@ setMessage({ text: `簽名或交換失敗: ${error.message}`, type: 'error' });
                         )}
                     </div>
                     
-                    {/* 交換介面 */}
                     <div className="space-y-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-1">您賣出</label>
@@ -299,7 +283,6 @@ setMessage({ text: `簽名或交換失敗: ${error.message}`, type: 'error' });
                         </div>
                     </div>
 
-                    {/* 主操作按鈕 */}
                     <button 
                         onClick={buttonAction.action}
                         disabled={buttonAction.disabled || isLoading}
@@ -309,7 +292,6 @@ setMessage({ text: `簽名或交換失敗: ${error.message}`, type: 'error' });
                         {buttonAction.text}
                     </button>
 
-                    {/* 訊息顯示 */}
                     <div className={`text-center text-sm h-10 flex items-center justify-center ${getMessageColor(message.type)}`}>
                         {message.text}
                     </div>
@@ -317,7 +299,6 @@ setMessage({ text: `簽名或交換失敗: ${error.message}`, type: 'error' });
             );
         }
         
-        // --- 渲染 React 應用 ---
         const container = document.getElementById('root');
         const root = ReactDOM.createRoot(container);
         root.render(<App />);
