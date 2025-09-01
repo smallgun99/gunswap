@@ -112,10 +112,8 @@
                         taker: userAddress
                     });
                     
-                    // 【最終修正】請求我們自己的後端代理 API
                     const url = `/api/quote?${params}`;
 
-                    // 我們的前端不再需要 API Key 或特殊標頭
                     const response = await fetch(url);
 
                     if (!response.ok) {
@@ -134,6 +132,13 @@
                     }
 
                     const result = await response.json();
+                    
+                    // 【最終修正】增加對 result 和 result.quote 的檢查
+                    if (!result || !result.quote || !result.quote.buyAmount) {
+                        console.error("無效的報價回傳:", result);
+                        throw new Error("伺服器回傳的報價格式無效");
+                    }
+
                     setQuote(result);
                     setBuyAmount(ethers.utils.formatUnits(result.quote.buyAmount, DAI_DECIMALS));
 
@@ -187,7 +192,9 @@
 
                 try {
                     const { domain, types, message } = quote.permit2.typedData;
-                    delete types.EIP712Domain; 
+                    
+                    // 【最終修正】根據 ethers.js v5 的要求，不應手動刪除 EIP712Domain
+                    // delete types.EIP712Domain; 
 
                     const signature = await signer._signTypedData(domain, types, message);
                     
