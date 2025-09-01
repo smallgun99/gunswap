@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Permit2 0x 交換 App</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 React 和 Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- 引入 ethers.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .spinner {
+            border: 2px solid rgba(255,255,255,.3);
+            border-top-color: white;
+            border-radius: 50%;
+            width: 16px; height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- 常數設定 ---
+        const POLYGON_CHAIN_ID = 137;
+        const WETH_ADDRESS = '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619';
+        const DAI_ADDRESS = '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063';
+        const WETH_DECIMALS = 18;
+        const DAI_DECIMALS = 18;
+        // 【更新】直接將 API Key 寫入程式碼
+        const OX_API_KEY = 'd934b953-65b4-4e0c-8935-ac203f634f9b';
+        
+        // WETH ERC20 合約的最小 ABI (Application Binary Interface)
+        const WETH_ABI = [
+            "function allowance(address owner, address spender) view returns (uint256)",
+            "function approve(address spender, uint256 amount) returns (bool)",
+        ];
+
+        // --- 主應用程式組件 ---
+        function App() {
+            // --- 狀態管理 (State) ---
+            const [provider, setProvider] = useState(null);
+            const [signer, setSigner] = useState(null);
+            const [userAddress, setUserAddress] = useState(null);
+            
+            const [sellAmount, setSellAmount] = useState('');
+            const [buyAmount, setBuyAmount] = useState('');
+            const [quote, setQuote] = useState(null);
+            
+            const [isLoading, setIsLoading] = useState(false);
+            const [message, setMessage] = useState({ text: '', type: 'info' });
+            
+            const [needsApproval, setNeedsApproval] = useState(false);
+
+            // --- 核心功能函式 ---
+
+            // 1. 連接錢包
+            const connectWallet = async () => {
+                if (typeof window.ethereum === 'undefined') {
+                    setMessage({ text: '錯誤：請安裝 MetaMask 並重新整理頁面！', type: 'error' });
+                    return;
+                }
+                try {
+                    const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+                    await web3Provider.send("eth_requestAccounts", []);
+                    
+                    const network = await web3Provider.getNetwork();
+                    if (network.chainId !== POLYGON_CHAIN_ID) {
+                        setMessage({ text: `請將 MetaMask 切換到 Polygon 網路`, type: 'error' });
+                        return;
+                    }
+
+                    const web3Signer = web3Provider.getSigner();
+                    const address = await web3Signer.getAddress();
+
+                    setProvider(web3Provider);
+                    setSigner(web3Signer);
+                    setUserAddress(address);
+                    setMessage({ text: '錢包連接成功！', type: 'success' });
+                } catch (error) {
+                    console.error("連接錢包失敗:", error);
+                    setMessage({ text: '連接錢包失敗，請重試', type: 'error' });
+                }
+            };
+
+            // 2. 取得報價並檢查授權
+            const getQuoteAndCheck = async () => {
+                if (!sellAmount || parseFloat(sellAmount) <= 0 || !signer) {
+                    setMessage({ text: '請輸入有效的賣出數量', type: 'error' });
+                    return;
+                }
+
+                setIsLoading(true);
+                setNeedsApproval(false);
+                setBuyAmount('');
+                setQuote(null);
+                setMessage({ text: '正在獲取報價...', type: 'info' });
+                
+                try {
+                    const sellAmountInWei = ethers.utils.parseUnits(sellAmount, WETH_DECIMALS);
+                    
+                    const params = new URLSearchParams({
+                        chainId: POLYGON_CHAIN_ID,
+                        sellToken: WETH_ADDRESS,
+                        buyToken: DAI_ADDRESS,
+                        sellAmount: sellAmountInWei.toString(),
+                        taker: userAddress
+                    });
+                    
+                    const url = `https://api.0x.org/swap/permit2/quote?${params}`;
+
+                    const response = await fetch(url, {
+                        headers: {
+                            '0x-api-key': OX_API_KEY,
+                            '0x-version': 'v2' // 【最終修正】根據官方文件，加回此標頭
+                        }
+                    });
+
+                    // 【更新】更強大的錯誤處理機制
+                    if (!response.ok) {
+                        const responseText = await response.text();
+                        let reason = responseText;
+                        try {
+                            // 嘗試解析為 JSON 以取得更詳細的錯誤
+                            const errorData = JSON.parse(responseText);
+                            if (errorData.reason) {
+                                reason = `${errorData.reason}.`;
+                                if(errorData.validationErrors && errorData.validationErrors.length > 0){
+                                   reason += ` 詳細資訊: ${errorData.validationErrors[0].description}`;
+                                }
+                            }
+                        } catch (e) {
+                            // 如果回傳的不是 JSON，直接顯示文字
+                        }
+                        throw new Error(`獲取報價失敗 (錯誤 ${response.status}): ${reason}`);
+                    }
+
+                    const result = await response.json();
+                    setQuote(result);
+                    setBuyAmount(ethers.utils.formatUnits(result.quote.buyAmount, DAI_DECIMALS));
+
+                    const permit2AllowanceTarget = result.permit2.allowanceTarget;
+                    const wethContract = new ethers.Contract(WETH_ADDRESS, WETH_ABI, signer);
+                    const allowance = await wethContract.allowance(userAddress, permit2AllowanceTarget);
+
+                    if (allowance.lt(sellAmountInWei)) {
+                        setNeedsApproval(true);
+                        setMessage({ text: '報價已獲取。需要一次性授權', type: 'info' });
+                    } else {
+                        setMessage({ text: '報價已獲取，可直接交換', type: 'success' });
+                    }
+
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ text: error.message, type: 'error' });
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            // 3. 授權 Permit2 合約
+            const approvePermit2 = async () => {
+                if (!quote) return;
+                setIsLoading(true);
+                setMessage({ text: '請在錢包中確認授權交易...', type: 'info' });
+
+                try {
+                    const wethContract = new ethers.Contract(WETH_ADDRESS, WETH_ABI, signer);
+                    const approveTx = await wethContract.approve(
+                        quote.permit2.allowanceTarget,
+                        ethers.constants.MaxUint256
+                    );
+                    
+                    await approveTx.wait();
+                    
+                    setNeedsApproval(false);
+                    setMessage({ text: '授權成功！現在可以簽名交換了', type: 'success' });
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ text: `授權失敗: ${error.message}`, type: 'error' });
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            
+            // 4. 簽名並執行交換
+            const signAndSwap = async () => {
+                if (!quote) return;
+                setIsLoading(true);
+                setMessage({ text: '請在錢包中完成簽名 (此操作免費)...', type: 'info' });
+
+                try {
+                    const { domain, types, message } = quote.permit2.typedData;
+                    delete types.EIP712Domain; 
+
+                    const signature = await signer._signTypedData(domain, types, message);
+                    
+                    setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
+                    
+                    const finalTx = {
+                      to: quote.quote.to,
+                      data: quote.quote.data,
+                      value: quote.quote.value,
+                    };
+
+                    finalTx.data = `${finalTx.data}${signature.substring(2)}`;
+                    
+                    const txResponse = await signer.sendTransaction(finalTx);
+                    setMessage({ text: '交易已送出！等待區塊鏈確認...', type: 'info' });
+                    
+                    const receipt = await txResponse.wait();
+                    setMessage({ text: `交換成功！`, type: 'success' });
+
+                    setQuote(null);
+                    setSellAmount('');
+                    setBuyAmount('');
+
+                } catch (error) {
+                    console.error(error);
+setMessage({ text: `簽名或交換失敗: ${error.message}`, type: 'error' });
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            
+            // --- UI 渲染邏輯 ---
+            const getButtonAction = () => {
+                if (!userAddress) return { text: '連接錢包', action: connectWallet, disabled: false };
+                if (isLoading) return { text: '處理中...', action: () => {}, disabled: true };
+                if (needsApproval) return { text: '授權 WETH 給 Permit2', action: approvePermit2, disabled: false };
+                if (quote) return { text: '簽名並交換', action: signAndSwap, disabled: false };
+                return { text: '取得報價', action: getQuoteAndCheck, disabled: !sellAmount };
+            };
+
+            const buttonAction = getButtonAction();
+            const getMessageColor = (type) => {
+                switch (type) {
+                    case 'error': return 'text-red-400';
+                    case 'success': return 'text-green-400';
+                    default: return 'text-gray-400';
+                }
+            };
+
+            return (
+                <div className="w-full max-w-md mx-auto bg-gray-800 rounded-2xl p-6 shadow-2xl space-y-6">
+                    <div>
+                        <h1 className="text-2xl font-bold text-center text-cyan-400">Permit2 0x 交換 App</h1>
+                        {userAddress ? (
+                             <div className="text-center text-xs text-gray-500 break-all mt-2">
+                                已連接: {userAddress}
+                            </div>
+                        ) : (
+                            <p className="text-sm text-gray-400 text-center mt-1">使用最新 Permit2 流程，節省您的 Gas Fee</p>
+                        )}
+                    </div>
+                    
+                    {/* 交換介面 */}
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-1">您賣出</label>
+                            <div className="flex items-center bg-gray-900 rounded-lg p-3">
+                                <input 
+                                    type="text" 
+                                    placeholder="0.0" 
+                                    className="bg-transparent w-full text-xl text-white focus:outline-none"
+                                    value={sellAmount}
+                                    onChange={(e) => {
+                                        setSellAmount(e.target.value);
+                                        setQuote(null);
+                                        setNeedsApproval(false);
+                                    }}
+                                    disabled={!userAddress}
+                                />
+                                <div className="flex items-center bg-gray-700 rounded-full px-3 py-1 ml-2 flex-shrink-0">
+                                    <img src="https://s2.coinmarketcap.com/static/img/coins/64x64/2396.png" alt="WETH" className="w-5 h-5 mr-2 rounded-full"/>
+                                    <span className="font-bold">WETH</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-1">您買入 (預估)</label>
+                            <div className="flex items-center bg-gray-900 rounded-lg p-3">
+                                <div className="w-full text-xl text-gray-500">{buyAmount ? parseFloat(buyAmount).toFixed(5) : '0.0'}</div>
+                                <div className="flex items-center bg-gray-700 rounded-full px-3 py-1 ml-2 flex-shrink-0">
+                                    <img src="https://s2.coinmarketcap.com/static/img/coins/64x64/4943.png" alt="DAI" className="w-5 h-5 mr-2 rounded-full"/>
+                                    <span className="font-bold">DAI</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 主操作按鈕 */}
+                    <button 
+                        onClick={buttonAction.action}
+                        disabled={buttonAction.disabled || isLoading}
+                        className={`w-full flex justify-center items-center bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed`}
+                    >
+                        {isLoading && <div className="spinner mr-2"></div>}
+                        {buttonAction.text}
+                    </button>
+
+                    {/* 訊息顯示 */}
+                    <div className={`text-center text-sm h-10 flex items-center justify-center ${getMessageColor(message.type)}`}>
+                        {message.text}
+                    </div>
+                </div>
+            );
+        }
+        
+        // --- 渲染 React 應用 ---
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
