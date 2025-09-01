@@ -37,6 +37,8 @@
         const DAI_ADDRESS = '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063';
         const WETH_DECIMALS = 18;
         const DAI_DECIMALS = 18;
+        // 【最終修正】根據官方文件，必須提供 Permit2 合約地址
+        const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3';
         
         const WETH_ABI = [
             "function allowance(address owner, address spender) view returns (uint256)",
@@ -109,7 +111,9 @@
                         sellToken: WETH_ADDRESS,
                         buyToken: DAI_ADDRESS,
                         sellAmount: sellAmountInWei.toString(),
-                        taker: userAddress
+                        taker: userAddress,
+                        // 【最終修正】加入 permit2Address 參數
+                        permit2Address: PERMIT2_ADDRESS
                     });
                     
                     const url = `/api/quote?${params}`;
@@ -133,7 +137,6 @@
 
                     const result = await response.json();
                     
-                    // 【最終修正】增加對 result 和 result.quote 的檢查
                     if (!result || !result.quote || !result.quote.buyAmount) {
                         console.error("無效的報價回傳:", result);
                         throw new Error("伺服器回傳的報價格式無效");
@@ -193,9 +196,6 @@
                 try {
                     const { domain, types, message } = quote.permit2.typedData;
                     
-                    // 【最終修正】根據 ethers.js v5 的要求，不應手動刪除 EIP712Domain
-                    // delete types.EIP712Domain; 
-
                     const signature = await signer._signTypedData(domain, types, message);
                     
                     setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
@@ -209,7 +209,7 @@
                     finalTx.data = `${finalTx.data}${signature.substring(2)}`;
                     
                     const txResponse = await signer.sendTransaction(finalTx);
-                    setMessage({ text: '交易已送出！等待區塊鏈確認...', type: 'info' });
+setMessage({ text: '交易已送出！等待區塊鏈確認...', type: 'info' });
                     
                     const receipt = await txResponse.wait();
                     setMessage({ text: `交換成功！`, type: 'success' });
