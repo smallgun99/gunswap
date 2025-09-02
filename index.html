@@ -39,9 +39,11 @@
         const DAI_DECIMALS = 18;
         const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3';
         
-        const WETH_ABI = [
+        // --- 合約 ABI (應用程式二進位介面) ---
+        const ERC20_ABI = [
             "function allowance(address owner, address spender) view returns (uint256)",
             "function approve(address spender, uint256 amount) returns (bool)",
+            "function balanceOf(address account) view returns (uint256)",
         ];
 
         // --- 主應用程式組件 ---
@@ -54,13 +56,41 @@
             const [sellAmount, setSellAmount] = useState('');
             const [buyAmount, setBuyAmount] = useState('');
             const [quote, setQuote] = useState(null);
+
+            const [wethBalance, setWethBalance] = useState('0.0');
+            const [daiBalance, setDaiBalance] = useState('0.0');
             
             const [isLoading, setIsLoading] = useState(false);
             const [message, setMessage] = useState({ text: '', type: 'info' });
             
             const [needsApproval, setNeedsApproval] = useState(false);
 
+            // --- 效果鉤子 (Effect Hook) ---
+            useEffect(() => {
+                if(signer && userAddress){
+                    fetchBalances();
+                }
+            }, [signer, userAddress]);
+
+
             // --- 核心功能函式 ---
+            
+            const fetchBalances = async () => {
+                if (!signer || !userAddress) return;
+                try {
+                    const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
+                    const daiContract = new ethers.Contract(DAI_ADDRESS, ERC20_ABI, signer);
+
+                    const wethBal = await wethContract.balanceOf(userAddress);
+                    const daiBal = await daiContract.balanceOf(userAddress);
+
+                    setWethBalance(ethers.utils.formatUnits(wethBal, WETH_DECIMALS));
+                    setDaiBalance(ethers.utils.formatUnits(daiBal, DAI_DECIMALS));
+                } catch (error) {
+                    console.error("讀取餘額失敗:", error);
+                    setMessage({ text: '讀取餘額失敗', type: 'error' });
+                }
+            };
 
             const connectWallet = async () => {
                 if (typeof window.ethereum === 'undefined') {
@@ -122,19 +152,15 @@
                         throw new Error(`伺服器錯誤 ${response.status}: ${JSON.stringify(result)}`);
                     }
                     
-                    // 【最終修正】直接從 result 的頂層讀取資料
                     if (!result.buyAmount) {
                         throw new Error(`回傳格式無效。收到資料: ${JSON.stringify(result)}`);
                     }
 
-                    // --- 如果一切成功 ---
                     setQuote(result);
-                    // 【最終修正】直接使用 result.buyAmount
                     setBuyAmount(ethers.utils.formatUnits(result.buyAmount, DAI_DECIMALS));
 
-                    // 【最終修正】直接使用 result.allowanceTarget
                     const permit2AllowanceTarget = result.allowanceTarget;
-                    const wethContract = new ethers.Contract(WETH_ADDRESS, WETH_ABI, signer);
+                    const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
                     const allowance = await wethContract.allowance(userAddress, permit2AllowanceTarget);
 
                     if (allowance.lt(sellAmountInWei)) {
@@ -158,8 +184,7 @@
                 setMessage({ text: '請在錢包中確認授權交易...', type: 'info' });
 
                 try {
-                    const wethContract = new ethers.Contract(WETH_ADDRESS, WETH_ABI, signer);
-                    // 【最終修正】直接使用 quote.allowanceTarget
+                    const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
                     const approveTx = await wethContract.approve(
                         quote.allowanceTarget,
                         ethers.constants.MaxUint256
@@ -183,14 +208,17 @@
                 setMessage({ text: '請在錢包中完成簽名 (此操作免費)...', type: 'info' });
 
                 try {
-                    // 【最終修正】直接使用 quote.typedData
-                    const { domain, types, message } = quote.typedData;
+                    // 【簽名錯誤修復】確保 quote.typedData 存在
+                    if (!quote.typedData) {
+                        throw new Error("報價資料中缺少 'typedData' 欄位，無法進行簽名。");
+                    }
+
+                    const { domain, types, message: permitMessage } = quote.typedData;
                     
-                    const signature = await signer._signTypedData(domain, types, message);
+                    const signature = await signer._signTypedData(domain, types, permitMessage);
                     
                     setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
                     
-                    // 【最終修正】直接使用 quote.to, quote.data, quote.value
                     const finalTx = {
                       to: quote.to,
                       data: quote.data,
@@ -204,6 +232,9 @@
                     
                     const receipt = await txResponse.wait();
                     setMessage({ text: `交換成功！`, type: 'success' });
+
+                    // 重新整理餘額
+                    await fetchBalances();
 
                     setQuote(null);
                     setSellAmount('');
@@ -249,7 +280,20 @@
                     
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1">您賣出</label>
+                            <div className="flex justify-between items-center mb-1">
+                                <label className="block text-sm font-medium text-gray-300">您賣出</label>
+                                {userAddress && (
+                                    <div className="text-xs text-gray-400">
+                                        餘額: {parseFloat(wethBalance).toFixed(4)}
+                                        <button 
+                                            onClick={() => setSellAmount(wethBalance)}
+                                            className="ml-2 text-cyan-400 hover:text-cyan-300 font-bold"
+                                        >
+                                            最大
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                             <div className="flex items-center bg-gray-900 rounded-lg p-3">
                                 <input 
                                     type="text" 
@@ -270,7 +314,14 @@
                             </div>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1">您買入 (預估)</label>
+                             <div className="flex justify-between items-center mb-1">
+                                <label className="block text-sm font-medium text-gray-300">您買入 (預估)</label>
+                                {userAddress && (
+                                    <div className="text-xs text-gray-400">
+                                        餘額: {parseFloat(daiBalance).toFixed(4)}
+                                    </div>
+                                )}
+                            </div>
                             <div className="flex items-center bg-gray-900 rounded-lg p-3">
                                 <div className="w-full text-xl text-gray-500">{buyAmount ? parseFloat(buyAmount).toFixed(5) : '0.0'}</div>
                                 <div className="flex items-center bg-gray-700 rounded-full px-3 py-1 ml-2 flex-shrink-0">
