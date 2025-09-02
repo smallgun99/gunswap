@@ -9,7 +9,7 @@ export default async function handler(request, response) {
     return response.status(400).json({ error: 'Missing query parameters' });
   }
 
-  // 您的 API Key，儲存在伺服器端更安全
+  // 您的 API Key
   const OX_API_KEY = 'd934b953-65b4-4e0c-8935-ac203f634f9b';
   
   // 建立要發送到 0x API 的目標 URL
@@ -25,25 +25,23 @@ export default async function handler(request, response) {
     });
 
     const responseBody = await apiResponse.text();
-    // 檢查 0x API 是否回傳錯誤
-    if (!apiResponse.ok) {
-        let errorData;
-        try {
-            errorData = JSON.parse(responseBody);
-        } catch(e) {
-            errorData = { reason: responseBody };
-        }
-        // 將 0x 的錯誤訊息回傳給前端
-        return response.status(apiResponse.status).json(errorData);
-    }
+
+    // 無論 0x API 回應成功或失敗，都設定 CORS 標頭允許前端存取
+    response.setHeader('Access-Control-Allow-Origin', '*');
     
-    // 如果成功，將 0x 的回傳結果回傳給前端
-    const data = JSON.parse(responseBody);
-    response.status(200).json(data);
+    // 嘗試將回應解析為 JSON
+    try {
+      const jsonData = JSON.parse(responseBody);
+      // 將 0x 的原始狀態碼和 JSON 內容回傳給前端
+      return response.status(apiResponse.status).json(jsonData);
+    } catch (e) {
+      // 如果回應不是 JSON，直接將純文字內容回傳
+      return response.status(apiResponse.status).send(responseBody);
+    }
 
   } catch (error) {
-    console.error('Error fetching from 0x API:', error);
-    response.status(500).json({ error: 'Internal Server Error' });
+    console.error('代理函數內部錯誤:', error);
+    response.status(500).json({ error: '代理伺服器發生內部錯誤' });
   }
 }
 
