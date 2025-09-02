@@ -69,12 +69,10 @@
             useEffect(() => {
                 const handleAccountsChanged = (accounts) => {
                     if (accounts.length === 0) {
-                        // MetaMask is locked or the user has disconnected.
                         setUserAddress(null);
                         setSigner(null);
                         setMessage({text: '錢包已斷開', type: 'info'});
                     } else if (accounts[0] !== userAddress) {
-                       // Re-connect with the new account.
                        connectWallet();
                     }
                 };
@@ -132,8 +130,7 @@
                     setSigner(web3Signer);
                     setUserAddress(address);
                     setMessage({ text: '錢包連接成功！', type: 'success' });
-
-                    // 【修正】連接成功後立刻獲取餘額
+                    
                     await fetchBalances(web3Signer, address);
 
                 } catch (error) {
@@ -170,12 +167,18 @@
                     const response = await fetch(url);
                     const result = await response.json();
 
+                    // 新增開發者日誌，可在瀏覽器 F12 -> Console 中查看
+                    console.log("收到的完整 API 回應:", JSON.stringify(result, null, 2));
+
                     if (!response.ok) {
                         throw new Error(`伺服器錯誤 ${response.status}: ${JSON.stringify(result)}`);
                     }
                     
-                    if (!result.buyAmount) {
-                        throw new Error(`回傳格式無效。收到資料: ${JSON.stringify(result)}`);
+                    // 【最終修正】在獲取報價後，立即進行最嚴格的檢查
+                    if (!result.buyAmount || !result.typedData || !result.typedData.domain) {
+                        setMessage({ text: '錯誤：API回傳的報價無效或不完整，無法進行簽名。請稍後再試。', type: 'error' });
+                        setIsLoading(false);
+                        return; // 在此中斷，不讓使用者進行下一步
                     }
 
                     setQuote(result);
@@ -230,6 +233,7 @@
                 setMessage({ text: '請在錢包中完成簽名 (此操作免費)...', type: 'info' });
 
                 try {
+                    // 第二層防護
                     if (!quote.typedData) {
                         throw new Error("報價資料中缺少 'typedData' 欄位，無法進行簽名。");
                     }
@@ -254,7 +258,6 @@ setMessage({ text: '交易已送出！等待區塊鏈確認...', type: 'info' })
                     await txResponse.wait();
                     setMessage({ text: `交換成功！`, type: 'success' });
 
-                    // 重新整理餘額
                     await fetchBalances(signer, userAddress);
 
                     setQuote(null);
