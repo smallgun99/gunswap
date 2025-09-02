@@ -3,24 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Permit2 0x 交換 App</title>
-    <!-- 引入 Tailwind CSS -->
+    <title>0x 智慧交換 App</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 React 和 Babel -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- 引入 ethers.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .spinner {
-            border: 2px solid rgba(255,255,255,.3);
-            border-top-color: white;
-            border-radius: 50%;
-            width: 16px; height: 16px;
-            animation: spin 1s linear infinite;
-        }
+        .spinner { border: 2px solid rgba(255,255,255,.3); border-top-color: white; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
@@ -39,121 +30,66 @@
         const DAI_DECIMALS = 18;
         const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3';
         
-        // --- 合約 ABI (應用程式二進位介面) ---
-        const ERC20_ABI = [
-            "function allowance(address owner, address spender) view returns (uint256)",
-            "function approve(address spender, uint256 amount) returns (bool)",
-            "function balanceOf(address account) view returns (uint256)",
-        ];
+        const ERC20_ABI = ["function allowance(address owner, address spender) view returns (uint256)", "function approve(address spender, uint256 amount) returns (bool)", "function balanceOf(address account) view returns (uint256)"];
 
-        // --- 主應用程式組件 ---
         function App() {
-            // --- 狀態管理 (State) ---
-            const [provider, setProvider] = useState(null);
             const [signer, setSigner] = useState(null);
             const [userAddress, setUserAddress] = useState(null);
-            
             const [sellAmount, setSellAmount] = useState('');
             const [buyAmount, setBuyAmount] = useState('');
             const [quote, setQuote] = useState(null);
-
             const [wethBalance, setWethBalance] = useState('0.0');
             const [daiBalance, setDaiBalance] = useState('0.0');
-            
             const [isLoading, setIsLoading] = useState(false);
             const [message, setMessage] = useState({ text: '', type: 'info' });
-            
+            const [flowType, setFlowType] = useState(null); // 'permit2' or 'v1'
             const [needsApproval, setNeedsApproval] = useState(false);
 
-            // --- 效果鉤子 (Effect Hook) ---
             useEffect(() => {
-                const handleAccountsChanged = (accounts) => {
-                    if (accounts.length === 0) {
-                        setUserAddress(null);
-                        setSigner(null);
-                        setMessage({text: '錢包已斷開', type: 'info'});
-                    } else if (accounts[0] !== userAddress) {
-                       connectWallet();
-                    }
-                };
-
                 if (window.ethereum) {
-                    window.ethereum.on('accountsChanged', handleAccountsChanged);
+                    const handler = (accounts) => accounts.length > 0 ? connectWallet() : (setUserAddress(null), setSigner(null));
+                    window.ethereum.on('accountsChanged', handler);
+                    return () => window.ethereum.removeListener('accountsChanged', handler);
                 }
+            }, []);
 
-                return () => {
-                    if (window.ethereum) {
-                        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-                    }
-                };
-            }, [userAddress]);
-
-
-            // --- 核心功能函式 ---
-            
             const fetchBalances = async (currentSigner, currentAddress) => {
                 if (!currentSigner || !currentAddress) return;
                 try {
-                    const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, currentSigner);
-                    const daiContract = new ethers.Contract(DAI_ADDRESS, ERC20_ABI, currentSigner);
-
-                    const wethBal = await wethContract.balanceOf(currentAddress);
-                    const daiBal = await daiContract.balanceOf(currentAddress);
-
+                    const weth = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, currentSigner);
+                    const dai = new ethers.Contract(DAI_ADDRESS, ERC20_ABI, currentSigner);
+                    const [wethBal, daiBal] = await Promise.all([weth.balanceOf(currentAddress), dai.balanceOf(currentAddress)]);
                     setWethBalance(ethers.utils.formatUnits(wethBal, WETH_DECIMALS));
                     setDaiBalance(ethers.utils.formatUnits(daiBal, DAI_DECIMALS));
-                } catch (error) {
-                    console.error("讀取餘額失敗:", error);
-                    setMessage({ text: '讀取餘額失敗', type: 'error' });
-                }
+                } catch (e) { setMessage({ text: '讀取餘額失敗', type: 'error' }); }
             };
 
             const connectWallet = async () => {
-                if (typeof window.ethereum === 'undefined') {
-                    setMessage({ text: '錯誤：請安裝 MetaMask 並重新整理頁面！', type: 'error' });
-                    return;
-                }
                 try {
-                    const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
-                    await web3Provider.send("eth_requestAccounts", []);
-                    
-                    const network = await web3Provider.getNetwork();
-                    if (network.chainId !== POLYGON_CHAIN_ID) {
-                        setMessage({ text: `請將 MetaMask 切換到 Polygon 網路`, type: 'error' });
-                        return;
-                    }
-
-                    const web3Signer = web3Provider.getSigner();
+                    const provider = new ethers.providers.Web3Provider(window.ethereum);
+                    await provider.send("eth_requestAccounts", []);
+                    const network = await provider.getNetwork();
+                    if (network.chainId !== POLYGON_CHAIN_ID) return setMessage({ text: '請切換到 Polygon 網路', type: 'error' });
+                    const web3Signer = provider.getSigner();
                     const address = await web3Signer.getAddress();
-
-                    setProvider(web3Provider);
                     setSigner(web3Signer);
                     setUserAddress(address);
-                    setMessage({ text: '錢包連接成功！', type: 'success' });
-                    
+                    setMessage({ text: '錢包連接成功', type: 'success' });
                     await fetchBalances(web3Signer, address);
-
-                } catch (error) {
-                    console.error("連接錢包失敗:", error);
-                    setMessage({ text: '連接錢包失敗，請重試', type: 'error' });
-                }
+                } catch (e) { setMessage({ text: '連接錢包失敗', type: 'error' }); }
             };
 
-            const getQuoteAndCheck = async () => {
-                if (!sellAmount || parseFloat(sellAmount) <= 0 || !signer) {
-                    setMessage({ text: '請輸入有效的賣出數量', type: 'error' });
-                    return;
-                }
-
+            const getQuote = async () => {
+                if (!sellAmount || parseFloat(sellAmount) <= 0 || !signer) return;
                 setIsLoading(true);
                 setNeedsApproval(false);
+                setFlowType(null);
                 setBuyAmount('');
                 setQuote(null);
                 setMessage({ text: '正在獲取報價...', type: 'info' });
                 
                 try {
                     const sellAmountInWei = ethers.utils.parseUnits(sellAmount, WETH_DECIMALS);
-                    
                     const params = new URLSearchParams({
                         chainId: POLYGON_CHAIN_ID,
                         sellToken: WETH_ADDRESS,
@@ -163,218 +99,142 @@
                         permit2Address: PERMIT2_ADDRESS
                     });
                     
-                    const url = `/api/quote?${params}`;
-                    const response = await fetch(url);
+                    const response = await fetch(`/api/quote?${params}`);
                     const result = await response.json();
 
-                    // 新增開發者日誌，可在瀏覽器 F12 -> Console 中查看
-                    console.log("收到的完整 API 回應:", JSON.stringify(result, null, 2));
-
-                    if (!response.ok) {
-                        throw new Error(`伺服器錯誤 ${response.status}: ${JSON.stringify(result)}`);
-                    }
-                    
-                    // 【最終修正】在獲取報價後，立即進行最嚴格的檢查
-                    if (!result.buyAmount || !result.typedData || !result.typedData.domain) {
-                        setMessage({ text: '錯誤：API回傳的報價無效或不完整，無法進行簽名。請稍後再試。', type: 'error' });
-                        setIsLoading(false);
-                        return; // 在此中斷，不讓使用者進行下一步
-                    }
+                    if (!response.ok) throw new Error(result.reason || `伺服器錯誤: ${JSON.stringify(result.validationErrors)}`);
 
                     setQuote(result);
                     setBuyAmount(ethers.utils.formatUnits(result.buyAmount, DAI_DECIMALS));
 
-                    const permit2AllowanceTarget = result.allowanceTarget;
                     const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
-                    const allowance = await wethContract.allowance(userAddress, permit2AllowanceTarget);
+                    const allowance = await wethContract.allowance(userAddress, result.allowanceTarget);
 
-                    if (allowance.lt(sellAmountInWei)) {
-                        setNeedsApproval(true);
-                        setMessage({ text: '報價已獲取。需要一次性授權', type: 'info' });
+                    // 【核心邏輯】檢查 API 回應，決定使用 v1 還是 v2 流程
+                    if (result.typedData && result.typedData.domain) {
+                        setFlowType('permit2');
+                        if (allowance.lt(sellAmountInWei)) {
+                            setNeedsApproval(true);
+                            setMessage({ text: 'v2 報價成功，但需授權 Permit2', type: 'info' });
+                        } else {
+                            setMessage({ text: 'v2 報價成功，可直接簽名', type: 'success' });
+                        }
                     } else {
-                        setMessage({ text: '報價已獲取，可直接交換', type: 'success' });
+                        setFlowType('v1');
+                        if (allowance.lt(sellAmountInWei)) {
+                            setNeedsApproval(true);
+                            setMessage({ text: 'v1 報價成功，需要授權', type: 'info' });
+                        } else {
+                            setMessage({ text: 'v1 報價成功，可直接交換', type: 'success' });
+                        }
                     }
-
                 } catch (error) {
-                    console.error("獲取報價時發生錯誤:", error);
-                    setMessage({ text: error.message, type: 'error' });
+                    setMessage({ text: `報價失敗: ${error.message}`, type: 'error' });
                 } finally {
                     setIsLoading(false);
                 }
             };
 
-            const approvePermit2 = async () => {
+            const approve = async () => {
                 if (!quote) return;
                 setIsLoading(true);
-                setMessage({ text: '請在錢包中確認授權交易...', type: 'info' });
-
+                setMessage({ text: '請在錢包中確認授權...', type: 'info' });
                 try {
                     const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
-                    const approveTx = await wethContract.approve(
-                        quote.allowanceTarget,
-                        ethers.constants.MaxUint256
-                    );
-                    
+                    const maxApproval = flowType === 'permit2';
+                    const amountToApprove = maxApproval ? ethers.constants.MaxUint256 : quote.sellAmount;
+                    const approveTx = await wethContract.approve(quote.allowanceTarget, amountToApprove);
                     await approveTx.wait();
-                    
                     setNeedsApproval(false);
-                    setMessage({ text: '授權成功！現在可以簽名交換了', type: 'success' });
-                } catch (error) {
-                    console.error(error);
-                    setMessage({ text: `授權失敗: ${error.message}`, type: 'error' });
-                } finally {
+                    setMessage({ text: '授權成功！現在可以執行下一步', type: 'success' });
+                } catch (e) { setMessage({ text: '授權失敗', type: 'error' }); } finally {
                     setIsLoading(false);
                 }
             };
             
-            const signAndSwap = async () => {
+            const executeTransaction = async () => {
                 if (!quote) return;
                 setIsLoading(true);
-                setMessage({ text: '請在錢包中完成簽名 (此操作免費)...', type: 'info' });
 
                 try {
-                    // 第二層防護
-                    if (!quote.typedData) {
-                        throw new Error("報價資料中缺少 'typedData' 欄位，無法進行簽名。");
+                    let signature = '';
+                    if (flowType === 'permit2') {
+                        setMessage({ text: '請在錢包中簽名 (免費)...', type: 'info' });
+                        const { domain, types, message: permitMessage } = quote.typedData;
+                        signature = await signer._signTypedData(domain, types, permitMessage);
+                    }
+                    
+                    setMessage({ text: '正在送出交易...', type: 'info' });
+
+                    const tx = { to: quote.to, data: quote.data, value: quote.value, gasPrice: quote.gasPrice };
+                    if (signature) {
+                        tx.data = `${tx.data}${signature.substring(2)}`;
                     }
 
-                    const { domain, types, message: permitMessage } = quote.typedData;
-                    
-                    const signature = await signer._signTypedData(domain, types, permitMessage);
-                    
-                    setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
-                    
-                    const finalTx = {
-                      to: quote.to,
-                      data: quote.data,
-                      value: quote.value,
-                    };
-
-                    finalTx.data = `${finalTx.data}${signature.substring(2)}`;
-                    
-                    const txResponse = await signer.sendTransaction(finalTx);
-setMessage({ text: '交易已送出！等待區塊鏈確認...', type: 'info' });
-                    
+                    const txResponse = await signer.sendTransaction(tx);
                     await txResponse.wait();
-                    setMessage({ text: `交換成功！`, type: 'success' });
-
+                    
+                    setMessage({ text: '交換成功！', type: 'success' });
                     await fetchBalances(signer, userAddress);
-
                     setQuote(null);
                     setSellAmount('');
                     setBuyAmount('');
-
-                } catch (error) {
-                    console.error(error);
-                    setMessage({ text: `簽名或交換失敗: ${error.message}`, type: 'error' });
-                } finally {
+                    setFlowType(null);
+                } catch (e) { setMessage({ text: `操作失敗: ${e.reason || e.message}`, type: 'error' }); } finally {
                     setIsLoading(false);
                 }
             };
-            
-            const getButtonAction = () => {
-                if (!userAddress) return { text: '連接錢包', action: connectWallet, disabled: false };
-                if (isLoading) return { text: '處理中...', action: () => {}, disabled: true };
-                if (needsApproval) return { text: '授權 WETH 給 Permit2', action: approvePermit2, disabled: false };
-                if (quote) return { text: '簽名並交換', action: signAndSwap, disabled: false };
-                return { text: '取得報價', action: getQuoteAndCheck, disabled: !sellAmount };
-            };
 
-            const buttonAction = getButtonAction();
-            const getMessageColor = (type) => {
-                switch (type) {
-                    case 'error': return 'text-red-400';
-                    case 'success': return 'text-green-400';
-                    default: return 'text-gray-400';
+            const getButtonAction = () => {
+                if (!userAddress) return { text: '連接錢包', action: connectWallet };
+                if (isLoading) return { text: '處理中...', disabled: true };
+                if (needsApproval) return { text: `授權 WETH ${flowType === 'permit2' ? '給 Permit2' : ''}`, action: approve };
+                if (quote) {
+                    const actionText = flowType === 'permit2' ? '簽名並交換' : '交換';
+                    return { text: actionText, action: executeTransaction };
                 }
+                return { text: '取得報價', action: getQuote, disabled: !sellAmount };
             };
+            
+            const button = getButtonAction();
+            const getMessageColor = (type) => ({'error':'text-red-400','success':'text-green-400'})[type]||'text-gray-400';
 
             return (
                 <div className="w-full max-w-md mx-auto bg-gray-800 rounded-2xl p-6 shadow-2xl space-y-6">
                     <div>
-                        <h1 className="text-2xl font-bold text-center text-cyan-400">Permit2 0x 交換 App</h1>
-                        {userAddress ? (
-                             <div className="text-center text-xs text-gray-500 break-all mt-2">
-                                已連接: {userAddress}
-                            </div>
-                        ) : (
-                            <p className="text-sm text-gray-400 text-center mt-1">使用最新 Permit2 流程，節省您的 Gas Fee</p>
-                        )}
+                        <h1 className="text-2xl font-bold text-center text-cyan-400">0x 智慧交換 App</h1>
+                        {userAddress ? <div className="text-center text-xs text-gray-500 break-all mt-2">已連接: {userAddress}</div> : <p className="text-sm text-gray-400 text-center mt-1">優先使用 v2 流程，無法使用時自動切換</p>}
                     </div>
-                    
                     <div className="space-y-4">
                         <div>
                             <div className="flex justify-between items-center mb-1">
-                                <label className="block text-sm font-medium text-gray-300">您賣出</label>
-                                {userAddress && (
-                                    <div className="text-xs text-gray-400">
-                                        餘額: {parseFloat(wethBalance).toFixed(4)}
-                                        <button 
-                                            onClick={() => setSellAmount(wethBalance)}
-                                            className="ml-2 text-cyan-400 hover:text-cyan-300 font-bold"
-                                        >
-                                            最大
-                                        </button>
-                                    </div>
-                                )}
+                                <label className="text-sm text-gray-300">您賣出</label>
+                                {userAddress && <div className="text-xs text-gray-400">餘額: {parseFloat(wethBalance).toFixed(5)} <button onClick={() => setSellAmount(wethBalance)} className="ml-2 text-cyan-400 font-bold">最大</button></div>}
                             </div>
                             <div className="flex items-center bg-gray-900 rounded-lg p-3">
-                                <input 
-                                    type="text" 
-                                    placeholder="0.0" 
-                                    className="bg-transparent w-full text-xl text-white focus:outline-none"
-                                    value={sellAmount}
-                                    onChange={(e) => {
-                                        setSellAmount(e.target.value);
-                                        setQuote(null);
-                                        setNeedsApproval(false);
-                                    }}
-                                    disabled={!userAddress}
-                                />
-                                <div className="flex items-center bg-gray-700 rounded-full px-3 py-1 ml-2 flex-shrink-0">
-                                    <img src="https://s2.coinmarketcap.com/static/img/coins/64x64/2396.png" alt="WETH" className="w-5 h-5 mr-2 rounded-full"/>
-                                    <span className="font-bold">WETH</span>
-                                </div>
+                                <input type="text" placeholder="0.0" className="bg-transparent w-full text-xl focus:outline-none" value={sellAmount} onChange={e => {setSellAmount(e.target.value); setQuote(null); setFlowType(null);}} disabled={!userAddress} />
+                                <div className="flex items-center bg-gray-700 rounded-full px-3 py-1 ml-2"><img src="https://s2.coinmarketcap.com/static/img/coins/64x64/2396.png" className="w-5 h-5 mr-2 rounded-full"/><span className="font-bold">WETH</span></div>
                             </div>
                         </div>
                         <div>
-                             <div className="flex justify-between items-center mb-1">
-                                <label className="block text-sm font-medium text-gray-300">您買入 (預估)</label>
-                                {userAddress && (
-                                    <div className="text-xs text-gray-400">
-                                        餘額: {parseFloat(daiBalance).toFixed(4)}
-                                    </div>
-                                )}
+                            <div className="flex justify-between items-center mb-1">
+                                <label className="text-sm text-gray-300">您買入 (預估)</label>
+                                {userAddress && <div className="text-xs text-gray-400">餘額: {parseFloat(daiBalance).toFixed(4)}</div>}
                             </div>
                             <div className="flex items-center bg-gray-900 rounded-lg p-3">
                                 <div className="w-full text-xl text-gray-500">{buyAmount ? parseFloat(buyAmount).toFixed(5) : '0.0'}</div>
-                                <div className="flex items-center bg-gray-700 rounded-full px-3 py-1 ml-2 flex-shrink-0">
-                                    <img src="https://s2.coinmarketcap.com/static/img/coins/64x64/4943.png" alt="DAI" className="w-5 h-5 mr-2 rounded-full"/>
-                                    <span className="font-bold">DAI</span>
-                                </div>
+                                <div className="flex items-center bg-gray-700 rounded-full px-3 py-1 ml-2"><img src="https://s2.coinmarketcap.com/static/img/coins/64x64/4943.png" className="w-5 h-5 mr-2 rounded-full"/><span className="font-bold">DAI</span></div>
                             </div>
                         </div>
                     </div>
-
-                    <button 
-                        onClick={buttonAction.action}
-                        disabled={buttonAction.disabled || isLoading}
-                        className={`w-full flex justify-center items-center bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed`}
-                    >
-                        {isLoading && <div className="spinner mr-2"></div>}
-                        {buttonAction.text}
+                    <button onClick={button.action} disabled={button.disabled || isLoading} className="w-full flex justify-center items-center bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-4 rounded-lg transition disabled:bg-gray-600 disabled:cursor-not-allowed">
+                        {isLoading && <div className="spinner mr-2"></div>} {button.text}
                     </button>
-
-                    <div className={`text-center text-sm h-10 flex items-center justify-center break-all ${getMessageColor(message.type)}`}>
-                        {message.text}
-                    </div>
+                    <div className={`text-center text-sm h-10 flex items-center justify-center break-all ${getMessageColor(message.type)}`}>{message.text}</div>
                 </div>
             );
         }
-        
-        const container = document.getElementById('root');
-        const root = ReactDOM.createRoot(container);
-        root.render(<App />);
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
 </html>
