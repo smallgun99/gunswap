@@ -24,7 +24,7 @@
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center">
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
 
     <div id="root"></div>
 
@@ -37,7 +37,6 @@
         const DAI_ADDRESS = '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063';
         const WETH_DECIMALS = 18;
         const DAI_DECIMALS = 18;
-        // 【最終修正】根據官方文件，必須提供 Permit2 合約地址
         const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3';
         
         const WETH_ABI = [
@@ -112,36 +111,25 @@
                         buyToken: DAI_ADDRESS,
                         sellAmount: sellAmountInWei.toString(),
                         taker: userAddress,
-                        // 【最終修正】加入 permit2Address 參數
                         permit2Address: PERMIT2_ADDRESS
                     });
                     
                     const url = `/api/quote?${params}`;
-
                     const response = await fetch(url);
-
-                    if (!response.ok) {
-                        const responseText = await response.text();
-                        let reason = responseText;
-                        try {
-                            const errorData = JSON.parse(responseText);
-                            if (errorData.reason) {
-                                reason = `${errorData.reason}.`;
-                                if(errorData.validationErrors && errorData.validationErrors.length > 0){
-                                   reason += ` 詳細資訊: ${errorData.validationErrors[0].description}`;
-                                }
-                            }
-                        } catch (e) {}
-                        throw new Error(`獲取報價失敗 (錯誤 ${response.status}): ${reason}`);
-                    }
-
                     const result = await response.json();
+
+                    // 【最終偵錯】檢查所有可能的成功和失敗條件
+                    if (!response.ok) {
+                        // 如果後端回傳錯誤狀態 (4xx, 5xx)，顯示詳細錯誤
+                        throw new Error(`伺服器錯誤 ${response.status}: ${JSON.stringify(result)}`);
+                    }
                     
-                    if (!result || !result.quote || !result.quote.buyAmount) {
-                        console.error("無效的報價回傳:", result);
-                        throw new Error("伺服器回傳的報價格式無效");
+                    if (!result.quote || !result.quote.buyAmount) {
+                        // 如果後端回傳成功狀態 (200) 但內容不對，顯示收到的內容
+                        throw new Error(`回傳格式無效。收到資料: ${JSON.stringify(result)}`);
                     }
 
+                    // --- 如果一切成功 ---
                     setQuote(result);
                     setBuyAmount(ethers.utils.formatUnits(result.quote.buyAmount, DAI_DECIMALS));
 
@@ -157,7 +145,7 @@
                     }
 
                 } catch (error) {
-                    console.error(error);
+                    console.error("獲取報價時發生錯誤:", error);
                     setMessage({ text: error.message, type: 'error' });
                 } finally {
                     setIsLoading(false);
@@ -209,7 +197,7 @@
                     finalTx.data = `${finalTx.data}${signature.substring(2)}`;
                     
                     const txResponse = await signer.sendTransaction(finalTx);
-setMessage({ text: '交易已送出！等待區塊鏈確認...', type: 'info' });
+                    setMessage({ text: '交易已送出！等待區塊鏈確認...', type: 'info' });
                     
                     const receipt = await txResponse.wait();
                     setMessage({ text: `交換成功！`, type: 'success' });
@@ -299,7 +287,7 @@ setMessage({ text: '交易已送出！等待區塊鏈確認...', type: 'info' })
                         {buttonAction.text}
                     </button>
 
-                    <div className={`text-center text-sm h-10 flex items-center justify-center ${getMessageColor(message.type)}`}>
+                    <div className={`text-center text-sm h-10 flex items-center justify-center break-all ${getMessageColor(message.type)}`}>
                         {message.text}
                     </div>
                 </div>
