@@ -118,22 +118,22 @@
                     const response = await fetch(url);
                     const result = await response.json();
 
-                    // 【最終偵錯】檢查所有可能的成功和失敗條件
                     if (!response.ok) {
-                        // 如果後端回傳錯誤狀態 (4xx, 5xx)，顯示詳細錯誤
                         throw new Error(`伺服器錯誤 ${response.status}: ${JSON.stringify(result)}`);
                     }
                     
-                    if (!result.quote || !result.quote.buyAmount) {
-                        // 如果後端回傳成功狀態 (200) 但內容不對，顯示收到的內容
+                    // 【最終修正】直接從 result 的頂層讀取資料
+                    if (!result.buyAmount) {
                         throw new Error(`回傳格式無效。收到資料: ${JSON.stringify(result)}`);
                     }
 
                     // --- 如果一切成功 ---
                     setQuote(result);
-                    setBuyAmount(ethers.utils.formatUnits(result.quote.buyAmount, DAI_DECIMALS));
+                    // 【最終修正】直接使用 result.buyAmount
+                    setBuyAmount(ethers.utils.formatUnits(result.buyAmount, DAI_DECIMALS));
 
-                    const permit2AllowanceTarget = result.permit2.allowanceTarget;
+                    // 【最終修正】直接使用 result.allowanceTarget
+                    const permit2AllowanceTarget = result.allowanceTarget;
                     const wethContract = new ethers.Contract(WETH_ADDRESS, WETH_ABI, signer);
                     const allowance = await wethContract.allowance(userAddress, permit2AllowanceTarget);
 
@@ -159,8 +159,9 @@
 
                 try {
                     const wethContract = new ethers.Contract(WETH_ADDRESS, WETH_ABI, signer);
+                    // 【最終修正】直接使用 quote.allowanceTarget
                     const approveTx = await wethContract.approve(
-                        quote.permit2.allowanceTarget,
+                        quote.allowanceTarget,
                         ethers.constants.MaxUint256
                     );
                     
@@ -182,16 +183,18 @@
                 setMessage({ text: '請在錢包中完成簽名 (此操作免費)...', type: 'info' });
 
                 try {
-                    const { domain, types, message } = quote.permit2.typedData;
+                    // 【最終修正】直接使用 quote.typedData
+                    const { domain, types, message } = quote.typedData;
                     
                     const signature = await signer._signTypedData(domain, types, message);
                     
                     setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
                     
+                    // 【最終修正】直接使用 quote.to, quote.data, quote.value
                     const finalTx = {
-                      to: quote.quote.to,
-                      data: quote.quote.data,
-                      value: quote.quote.value,
+                      to: quote.to,
+                      data: quote.data,
+                      value: quote.value,
                     };
 
                     finalTx.data = `${finalTx.data}${signature.substring(2)}`;
