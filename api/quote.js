@@ -11,6 +11,11 @@ export default async function handler(request) {
 
     const apiKey = 'd934b953-65b4-4e0c-8935-ac203f634f9b';
 
+    const headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*', // 確保 CORS 沒問題
+    };
+
     try {
         const apiResponse = await fetch(quoteUrl.toString(), {
             headers: {
@@ -20,14 +25,10 @@ export default async function handler(request) {
         });
 
         const responseBodyText = await apiResponse.text();
-        const headers = {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-        };
 
         // 【核心修正】如果 0x API 回應不成功 (e.g., 400, 500)
+        // 我們將錯誤訊息打包成一個合法的 JSON 回傳給前端
         if (!apiResponse.ok) {
-            // 我們將錯誤訊息打包成一個合法的 JSON 回傳給前端
             const errorPayload = {
                 error: true,
                 statusCode: apiResponse.status,
