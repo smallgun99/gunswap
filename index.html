@@ -102,10 +102,23 @@
 
                     // 【核心修正】檢查後端回傳的資料中是否有我們自己定義的 error 標記
                     if (result.error) {
-                        throw new Error(result.message || result.details || '未知的後端錯誤');
+                        // 嘗試解析 details 欄位，看裡面是否有更具體的 0x 錯誤
+                        let finalErrorMessage = result.message || '未知的後端錯誤';
+                        if(result.details) {
+                            try {
+                                const detailsJson = JSON.parse(result.details);
+                                if (detailsJson.validationErrors && detailsJson.validationErrors.length > 0) {
+                                    finalErrorMessage = detailsJson.validationErrors[0].description;
+                                } else {
+                                    finalErrorMessage = result.details;
+                                }
+                            } catch(e) {
+                                finalErrorMessage = result.details;
+                            }
+                        }
+                        throw new Error(finalErrorMessage);
                     }
                     
-                    // 檢查報價是否有效
                     if (!result.buyAmount) {
                        throw new Error(`報價無效: ${JSON.stringify(result.validationErrors || result)}`);
                     }
