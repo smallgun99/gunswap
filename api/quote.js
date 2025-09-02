@@ -1,47 +1,40 @@
-// Vercel Serverless Function
-// 這段程式碼會在 Vercel 的伺服器上運行，而不是在您的瀏覽器中
+export default async function handler(request) {
+    const url = new URL(request.url);
+    const params = url.searchParams;
 
-export default async function handler(request, response) {
-  // 從前端請求的 URL 中獲取所有查詢參數
-  const queryString = request.url.split('?')[1];
-  
-  if (!queryString) {
-    return response.status(400).json({ error: 'Missing query parameters' });
-  }
+    // 堅持使用最新的 v2 端點
+    const quoteUrl = new URL('https://api.0x.org/swap/permit2/quote');
 
-  // 您的 API Key
-  const OX_API_KEY = 'd934b953-65b4-4e0c-8935-ac203f634f9b';
-  
-  // 建立要發送到 0x API 的目標 URL
-  const targetUrl = `https://api.0x.org/swap/permit2/quote?${queryString}`;
-
-  try {
-    // 從我們的 Vercel 伺服器發送到 0x 伺服器
-    const apiResponse = await fetch(targetUrl, {
-      headers: {
-        '0x-api-key': OX_API_KEY,
-        '0x-version': 'v2',
-      },
+    params.forEach((value, key) => {
+        quoteUrl.searchParams.append(key, value);
     });
 
-    const responseBody = await apiResponse.text();
+    const apiKey = 'd934b953-65b4-4e0c-8935-ac203f634f9b';
 
-    // 無論 0x API 回應成功或失敗，都設定 CORS 標頭允許前端存取
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    
-    // 嘗試將回應解析為 JSON
     try {
-      const jsonData = JSON.parse(responseBody);
-      // 將 0x 的原始狀態碼和 JSON 內容回傳給前端
-      return response.status(apiResponse.status).json(jsonData);
-    } catch (e) {
-      // 如果回應不是 JSON，直接將純文字內容回傳
-      return response.status(apiResponse.status).send(responseBody);
-    }
+        const apiResponse = await fetch(quoteUrl.toString(), {
+            headers: {
+                '0x-api-key': apiKey,
+                '0x-version': 'v2', // 堅持使用 v2 標頭
+            },
+        });
 
-  } catch (error) {
-    console.error('代理函數內部錯誤:', error);
-    response.status(500).json({ error: '代理伺服器發生內部錯誤' });
-  }
+        const data = await apiResponse.json();
+
+        // 無論成功或失敗，都將原始回應和狀態碼回傳給前端
+        return new Response(JSON.stringify(data), {
+            status: apiResponse.status,
+            headers: { 
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*', // 確保 CORS 沒問題
+            },
+        });
+
+    } catch (error) {
+        return new Response(JSON.stringify({ error: '內部伺服器錯誤', details: error.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
 }
 
