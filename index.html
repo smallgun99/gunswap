@@ -67,22 +67,40 @@
 
             // --- 效果鉤子 (Effect Hook) ---
             useEffect(() => {
-                if(signer && userAddress){
-                    fetchBalances();
+                const handleAccountsChanged = (accounts) => {
+                    if (accounts.length === 0) {
+                        // MetaMask is locked or the user has disconnected.
+                        setUserAddress(null);
+                        setSigner(null);
+                        setMessage({text: '錢包已斷開', type: 'info'});
+                    } else if (accounts[0] !== userAddress) {
+                       // Re-connect with the new account.
+                       connectWallet();
+                    }
+                };
+
+                if (window.ethereum) {
+                    window.ethereum.on('accountsChanged', handleAccountsChanged);
                 }
-            }, [signer, userAddress]);
+
+                return () => {
+                    if (window.ethereum) {
+                        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+                    }
+                };
+            }, [userAddress]);
 
 
             // --- 核心功能函式 ---
             
-            const fetchBalances = async () => {
-                if (!signer || !userAddress) return;
+            const fetchBalances = async (currentSigner, currentAddress) => {
+                if (!currentSigner || !currentAddress) return;
                 try {
-                    const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
-                    const daiContract = new ethers.Contract(DAI_ADDRESS, ERC20_ABI, signer);
+                    const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, currentSigner);
+                    const daiContract = new ethers.Contract(DAI_ADDRESS, ERC20_ABI, currentSigner);
 
-                    const wethBal = await wethContract.balanceOf(userAddress);
-                    const daiBal = await daiContract.balanceOf(userAddress);
+                    const wethBal = await wethContract.balanceOf(currentAddress);
+                    const daiBal = await daiContract.balanceOf(currentAddress);
 
                     setWethBalance(ethers.utils.formatUnits(wethBal, WETH_DECIMALS));
                     setDaiBalance(ethers.utils.formatUnits(daiBal, DAI_DECIMALS));
@@ -114,6 +132,10 @@
                     setSigner(web3Signer);
                     setUserAddress(address);
                     setMessage({ text: '錢包連接成功！', type: 'success' });
+
+                    // 【修正】連接成功後立刻獲取餘額
+                    await fetchBalances(web3Signer, address);
+
                 } catch (error) {
                     console.error("連接錢包失敗:", error);
                     setMessage({ text: '連接錢包失敗，請重試', type: 'error' });
@@ -208,7 +230,6 @@
                 setMessage({ text: '請在錢包中完成簽名 (此操作免費)...', type: 'info' });
 
                 try {
-                    // 【簽名錯誤修復】確保 quote.typedData 存在
                     if (!quote.typedData) {
                         throw new Error("報價資料中缺少 'typedData' 欄位，無法進行簽名。");
                     }
@@ -228,13 +249,13 @@
                     finalTx.data = `${finalTx.data}${signature.substring(2)}`;
                     
                     const txResponse = await signer.sendTransaction(finalTx);
-                    setMessage({ text: '交易已送出！等待區塊鏈確認...', type: 'info' });
+setMessage({ text: '交易已送出！等待區塊鏈確認...', type: 'info' });
                     
-                    const receipt = await txResponse.wait();
+                    await txResponse.wait();
                     setMessage({ text: `交換成功！`, type: 'success' });
 
                     // 重新整理餘額
-                    await fetchBalances();
+                    await fetchBalances(signer, userAddress);
 
                     setQuote(null);
                     setSellAmount('');
