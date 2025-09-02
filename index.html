@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x 智慧交換 App</title>
+    <title>0x 智慧交換 App (最終穩定版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -22,14 +22,12 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- 常數設定 ---
         const POLYGON_CHAIN_ID = 137;
         const WETH_ADDRESS = '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619';
         const DAI_ADDRESS = '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063';
         const WETH_DECIMALS = 18;
         const DAI_DECIMALS = 18;
         const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3';
-        
         const ERC20_ABI = ["function allowance(address owner, address spender) view returns (uint256)", "function approve(address spender, uint256 amount) returns (bool)", "function balanceOf(address account) view returns (uint256)"];
 
         function App() {
@@ -42,7 +40,7 @@
             const [daiBalance, setDaiBalance] = useState('0.0');
             const [isLoading, setIsLoading] = useState(false);
             const [message, setMessage] = useState({ text: '', type: 'info' });
-            const [flowType, setFlowType] = useState(null); // 'permit2' or 'v1'
+            const [flowType, setFlowType] = useState(null);
             const [needsApproval, setNeedsApproval] = useState(false);
 
             useEffect(() => {
@@ -100,9 +98,17 @@
                     });
                     
                     const response = await fetch(`/api/quote?${params}`);
-                    const result = await response.json();
+                    const result = await response.json(); // 這一步現在是安全的
 
-                    if (!response.ok) throw new Error(result.reason || `伺服器錯誤: ${JSON.stringify(result.validationErrors)}`);
+                    // 【核心修正】檢查後端回傳的資料中是否有我們自己定義的 error 標記
+                    if (result.error) {
+                        throw new Error(result.message || result.details || '未知的後端錯誤');
+                    }
+                    
+                    // 檢查報價是否有效
+                    if (!result.buyAmount) {
+                       throw new Error(`報價無效: ${JSON.stringify(result.validationErrors || result)}`);
+                    }
 
                     setQuote(result);
                     setBuyAmount(ethers.utils.formatUnits(result.buyAmount, DAI_DECIMALS));
@@ -110,7 +116,6 @@
                     const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
                     const allowance = await wethContract.allowance(userAddress, result.allowanceTarget);
 
-                    // 【核心邏輯】檢查 API 回應，決定使用 v1 還是 v2 流程
                     if (result.typedData && result.typedData.domain) {
                         setFlowType('permit2');
                         if (allowance.lt(sellAmountInWei)) {
