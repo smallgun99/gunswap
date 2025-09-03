@@ -1,7 +1,12 @@
 // 使用 module.exports 以符合 Vercel 的 Node.js 執行環境
 module.exports = async (req, res) => {
-    // 您的 API Key
-    const apiKey = 'd934b953-65b4-4e0c-8953-ac203f634f9b';
+    // 【核心修正】從 Vercel 的環境變數中安全地讀取 API Key
+    // process.env.OX_API_KEY 的值，就是您在 Vercel 儀表板中設定的值
+    const apiKey = process.env.OX_API_KEY;
+
+    if (!apiKey) {
+        return res.status(500).json({ error: true, message: "後端未設定 API Key" });
+    }
     
     const incomingUrl = new URL(req.url, `http://${req.headers.host}`);
     const params = incomingUrl.searchParams;
@@ -12,9 +17,6 @@ module.exports = async (req, res) => {
         quoteUrl.searchParams.append(key, value);
     });
     
-    // 【核心修正】模仿 Oku.trade，加入手續費參數，確保獲得可執行的報價
-    // 我們將手續費設為 0，接收地址設為 taker 地址 (您自己)
-    // 這樣既符合專業請求的結構，又不會實際收取費用
     quoteUrl.searchParams.append('feeRecipient', params.get('taker'));
     quoteUrl.searchParams.append('buyTokenPercentageFee', '0');
 
