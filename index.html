@@ -104,7 +104,7 @@
                     }
                     
                     // 【最終核心修正】使用正確的資料結構路徑來檢查報價
-                    if (!result.permit2 || !result.permit2.eip712 || !result.to) {
+                    if (!result.permit2 || !result.permit2.eip712 || !result.transaction || !result.transaction.to) {
                        throw new Error(`API 回傳的報價不完整，無法執行。`);
                     }
 
