@@ -1,12 +1,11 @@
 // Vercel Serverless Function to act as a proxy for the 0x API
 // This is a Node.js environment.
 
-// 引入 fetch 模組 (在 Node.js 18+ 環境中是內建的)
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-
 export default async function handler(req, res) {
     // 從前端請求的 URL 中獲取查詢參數
-    const { searchParams } = new URL(req.url, `https://gunswap.vercel.app`);
+    // 使用 req.url 確保我們能獲取完整的 URL，包括查詢參數
+    const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+    const { searchParams } = requestUrl;
     
     // 【最終核心修正】在向 0x API 發送請求前，加入滑點容忍度參數
     // 這能極大提高在真實網路環境中交易的成功率
@@ -24,7 +23,7 @@ export default async function handler(req, res) {
     const headers = { '0x-api-key': apiKey };
 
     try {
-        // 向 0x API 發送請求
+        // 【核心修正】直接使用 Vercel 環境內建的 fetch，移除不必要的 import
         const apiResponse = await fetch(apiUrl, { headers });
         const responseBody = await apiResponse.text();
         const responseStatus = apiResponse.status;
