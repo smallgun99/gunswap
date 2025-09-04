@@ -103,7 +103,6 @@
                         throw new Error(errorReason);
                     }
                     
-                    // 【最終核心修正】使用正確的資料結構路徑來檢查報價
                     if (!result.permit2 || !result.permit2.eip712 || !result.transaction || !result.transaction.to) {
                        throw new Error(`API 回傳的報價不完整，無法執行。`);
                     }
@@ -148,9 +147,14 @@
                 setMessage({ text: '請在錢包中簽名 (免費)...', type: 'info' });
 
                 try {
-                    // 【最終核心修正】使用正確的資料結構路徑來讀取簽名資料
                     const { domain, types, message: permitMessage } = quote.permit2.eip712;
-                    const signature = await signer._signTypedData(domain, types, permitMessage);
+                    
+                    // 【最終核心修正】Ethers.js 的 _signTypedData 會自動處理 EIP712Domain，
+                    // 我們必須從 types 物件中將其移除，否則會導致 "unused types" 錯誤。
+                    const typesForSignature = { ...types };
+                    delete typesForSignature.EIP712Domain;
+
+                    const signature = await signer._signTypedData(domain, typesForSignature, permitMessage);
                     
                     setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
 
@@ -164,7 +168,10 @@
                     setQuote(null);
                     setSellAmount('');
                     setBuyAmount('');
-                } catch (e) { setMessage({ text: `操作失敗: ${e.reason || e.message}`, type: 'error' }); } finally {
+                } catch (e) { 
+                    console.error("簽名或交換失敗詳情:", e);
+                    setMessage({ text: `操作失敗: ${e.reason || e.message}`, type: 'error' }); 
+                } finally {
                     setIsLoading(false);
                 }
             };
