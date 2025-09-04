@@ -148,18 +148,27 @@
 
                 try {
                     const { domain, types, message: permitMessage } = quote.permit2.eip712;
-                    
-                    // 【最終核心修正】Ethers.js 的 _signTypedData 會自動處理 EIP712Domain，
-                    // 我們必須從 types 物件中將其移除，否則會導致 "unused types" 錯誤。
                     const typesForSignature = { ...types };
                     delete typesForSignature.EIP712Domain;
 
                     const signature = await signer._signTypedData(domain, typesForSignature, permitMessage);
                     
                     setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
-
-                    const tx = { to: quote.transaction.to, data: `${quote.transaction.data}${signature.substring(2)}`, value: quote.transaction.value };
                     
+                    // 【最終核心修正】為交易增加 Gas 緩衝
+                    const tx = {
+                        to: quote.transaction.to,
+                        data: `${quote.transaction.data}${signature.substring(2)}`,
+                        value: quote.transaction.value,
+                        gasPrice: quote.transaction.gasPrice,
+                    };
+
+                    if (quote.transaction.gas) {
+                        const gasEstimate = ethers.BigNumber.from(quote.transaction.gas);
+                        // 增加 20% 的緩衝
+                        tx.gasLimit = gasEstimate.mul(120).div(100);
+                    }
+
                     const txResponse = await signer.sendTransaction(tx);
                     await txResponse.wait();
                     
