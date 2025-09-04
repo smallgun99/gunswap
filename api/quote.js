@@ -5,18 +5,12 @@ export default async function handler(req, res) {
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
     const { searchParams } = requestUrl;
 
-    // 2. 【核心修正】Add parameters to mimic professional dApps like Oku.trade
-    // Even with a 0 fee, including these params signals a more robust request to the API,
-    // which can result in a more reliable, executable quote.
-    const takerAddress = searchParams.get('taker');
-    if (takerAddress) {
-        searchParams.set('feeRecipient', takerAddress); // Set the user as the fee recipient
-        searchParams.set('buyTokenPercentageFee', '0.0'); // Set a 0% fee
-    }
-    
-    // These parameters ensure we get a v2-compatible quote.
+    // 2. 【核心修正】Add parameters to ensure a robust and executable v2 quote.
+    // These are standard practice to increase the likelihood of a successful transaction.
     searchParams.set('includedSources', 'Uniswap_V3,Sushiswap_V3,QuickSwap_V3');
     searchParams.set('slippagePercentage', '0.005'); // 0.5% slippage for robustness
+    
+    // NOTE: The previous addition of `feeRecipient` was incorrect and has been removed.
 
     const apiKey = process.env.OX_API_KEY;
 
