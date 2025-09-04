@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (最終運作版)</title>
+    <title>0x v2 交換 App (最終版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -87,12 +87,10 @@
                 try {
                     const sellAmountInWei = ethers.utils.parseUnits(sellAmount, WETH_DECIMALS);
                     const params = new URLSearchParams({
-                        chainId: POLYGON_CHAIN_ID,
                         sellToken: WETH_ADDRESS,
                         buyToken: DAI_ADDRESS,
                         sellAmount: sellAmountInWei.toString(),
                         taker: userAddress,
-                        permit2Address: PERMIT2_ADDRESS
                     });
                     
                     const response = await fetch(`/api/quote?${params}`);
@@ -155,7 +153,6 @@
                     
                     setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
                     
-                    // 【最終核心修正】為交易增加 Gas 緩衝
                     const tx = {
                         to: quote.transaction.to,
                         data: `${quote.transaction.data}${signature.substring(2)}`,
@@ -165,7 +162,6 @@
 
                     if (quote.transaction.gas) {
                         const gasEstimate = ethers.BigNumber.from(quote.transaction.gas);
-                        // 增加 20% 的緩衝
                         tx.gasLimit = gasEstimate.mul(120).div(100);
                     }
 
