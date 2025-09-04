@@ -12,31 +12,29 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Content-Type', 'application/json');
 
-    // 處理瀏覽器的 preflight 請求
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
     try {
         const params = req.query;
-
-        // 【核心修正】只使用 v2 API 端點
         const quoteUrl = new URL('https://api.0x.org/swap/permit2/quote');
 
-        // 將所有前端傳來的參數附加到請求中
         Object.entries(params).forEach(([key, value]) => {
-            // 【核心修正】確保參數名稱是 v2 的 `taker` 而不是 v1 的 `takerAddress`
             quoteUrl.searchParams.append(key, value);
         });
 
-        // 加入 v2 所需的手續費參數
         quoteUrl.searchParams.append('feeRecipient', params.taker);
         quoteUrl.searchParams.append('buyTokenPercentageFee', '0');
+
+        // 【最終核心修正】強制只使用支援 Permit2 的流動性來源，確保獲得 v2 報價
+        // 您可以根據需求增減來源，例如 'Uniswap_V3,Balancer_V2,Curve,MakerPsm' 等
+        quoteUrl.searchParams.append('includedSources', 'Uniswap_V3,Curve,Balancer_V2');
 
         const apiResponse = await fetch(quoteUrl.toString(), {
             headers: {
                 '0x-api-key': apiKey,
-                '0x-version': 'v2', // 只使用 v2
+                '0x-version': 'v2',
             },
         });
 
