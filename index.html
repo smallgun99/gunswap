@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>gunswap 0xv2</title>
+    <title>0x v2 交換 App (最終修正版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -91,7 +91,7 @@
                         sellToken: WETH_ADDRESS,
                         buyToken: DAI_ADDRESS,
                         sellAmount: sellAmountInWei.toString(),
-                        taker: userAddress,
+                        taker: userAddress, // 【核心修正】這裡使用 taker
                         permit2Address: PERMIT2_ADDRESS
                     });
                     
@@ -104,7 +104,7 @@
                     }
                     
                     if (!result.typedData || !result.typedData.domain || !result.to) {
-                       throw new Error(`API 回傳的報價不完整，無法執行。請嘗試其他交易對或數量。`);
+                       throw new Error(`API 回傳的報價不完整，無法執行。`);
                     }
 
                     setQuote(result);
