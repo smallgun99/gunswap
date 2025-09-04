@@ -1,49 +1,45 @@
-// 使用 module.exports 以符合 Vercel 的 Node.js 執行環境
-module.exports = async (req, res) => {
+// Vercel Serverless Function to act as a proxy for the 0x API
+// This is a Node.js environment.
+
+// 引入 fetch 模組 (在 Node.js 18+ 環境中是內建的)
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+export default async function handler(req, res) {
+    // 從前端請求的 URL 中獲取查詢參數
+    const { searchParams } = new URL(req.url, `https://gunswap.vercel.app`);
+    
+    // 【最終核心修正】在向 0x API 發送請求前，加入滑點容忍度參數
+    // 這能極大提高在真實網路環境中交易的成功率
+    searchParams.set('slippagePercentage', '0.005'); // 0.5% slipage
+
     const apiKey = process.env.OX_API_KEY;
 
-    // 跨來源請求設定
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
-    res.setHeader('Content-Type', 'application/json');
-
+    // 再次檢查環境變數是否存在，確保部署正確
     if (!apiKey) {
         return res.status(500).json({ error: true, message: "後端未設定 API Key" });
     }
 
+    // 建立要發送給 0x API 的 URL
+    const apiUrl = `https://polygon.api.0x.org/swap/v1/quote?${searchParams}`;
+    const headers = { '0x-api-key': apiKey };
+
     try {
-        const params = req.query;
-        const quoteUrl = new URL('https://api.0x.org/swap/permit2/quote');
+        // 向 0x API 發送請求
+        const apiResponse = await fetch(apiUrl, { headers });
+        const responseBody = await apiResponse.text();
+        const responseStatus = apiResponse.status;
 
-        Object.entries(params).forEach(([key, value]) => {
-            quoteUrl.searchParams.append(key, value);
-        });
-
-        // 加入手續費參數，模仿專業平台的請求結構
-        quoteUrl.searchParams.append('feeRecipient', params.taker);
-        quoteUrl.searchParams.append('buyTokenPercentageFee', '0');
-
-        // 【最終核心修正】強制只使用支援 Permit2 的流動性來源
-        quoteUrl.searchParams.append('includedSources', 'Uniswap_V3,Curve,Balancer_V2,MakerPsm');
-
-        const apiResponse = await fetch(quoteUrl.toString(), {
-            headers: { '0x-api-key': apiKey, '0x-version': 'v2' },
-        });
-
-        const responseBodyText = await apiResponse.text();
+        // 將 0x API 的原始回應（無論是成功還是失敗）安全地回傳給前端
+        // 確保 Content-Type 是 application/json
+        res.status(responseStatus).setHeader('Content-Type', 'application/json').send(responseBody);
         
-        // 無論成功或失敗，都將最原始的回應傳回給前端
-        return res.status(apiResponse.status).send(responseBodyText);
-
     } catch (error) {
-        return res.status(500).json({
+        // 如果 fetch 本身失敗（例如網路問題），回傳一個標準的錯誤 JSON
+        res.status(500).json({
             error: true,
-            message: '後端代理網路錯誤',
-            details: error.message,
+            message: '後端代理請求 0x API 時發生網路錯誤',
+            details: error.message
         });
     }
-};
+}
 
