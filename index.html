@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (v1.1)</title>
+    <title>0x v2 交換 App (v1.2)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -38,6 +38,8 @@
             const [quote, setQuote] = useState(null);
             const [wethBalance, setWethBalance] = useState('0.0');
             const [daiBalance, setDaiBalance] = useState('0.0');
+            const [maticBalance, setMaticBalance] = useState('0.0'); // 【v1.2 新增】
+            const [estimatedGas, setEstimatedGas] = useState(null); // 【v1.2 新增】
             const [isLoading, setIsLoading] = useState(false);
             const [message, setMessage] = useState({ text: '', type: 'info' });
             const [needsApproval, setNeedsApproval] = useState(false);
@@ -58,9 +60,15 @@
                 try {
                     const weth = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, currentSigner);
                     const dai = new ethers.Contract(DAI_ADDRESS, ERC20_ABI, currentSigner);
-                    const [wethBal, daiBal] = await Promise.all([weth.balanceOf(currentAddress), dai.balanceOf(currentAddress)]);
+                    // 【v1.2 核心修正】同時獲取 MATIC 原生代幣餘額
+                    const [wethBal, daiBal, maticBal] = await Promise.all([
+                        weth.balanceOf(currentAddress),
+                        dai.balanceOf(currentAddress),
+                        currentSigner.getBalance()
+                    ]);
                     setWethBalance(ethers.utils.formatUnits(wethBal, WETH_DECIMALS));
                     setDaiBalance(ethers.utils.formatUnits(daiBal, DAI_DECIMALS));
+                    setMaticBalance(ethers.utils.formatEther(maticBal));
                 } catch (e) { setMessage({ text: '讀取餘額失敗', type: 'error' }); }
             };
 
@@ -86,6 +94,7 @@
                 setNeedsApproval(false);
                 setBuyAmount('');
                 setQuote(null);
+                setEstimatedGas(null); // 【v1.2 新增】重置預估 Gas
                 setMessage({ text: '正在獲取 v2 報價...', type: 'info' });
                 
                 try {
@@ -120,6 +129,12 @@
 
                     setQuote(result);
                     setBuyAmount(ethers.utils.formatUnits(result.buyAmount, DAI_DECIMALS));
+
+                    // 【v1.2 核心修正】計算並設定預估 Gas 費用
+                    if (result.transaction && result.transaction.gas && result.transaction.gasPrice) {
+                        const gasCost = ethers.BigNumber.from(result.transaction.gas).mul(result.transaction.gasPrice);
+                        setEstimatedGas(ethers.utils.formatEther(gasCost));
+                    }
 
                     const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
                     const allowance = await wethContract.allowance(userAddress, result.allowanceTarget);
@@ -173,10 +188,10 @@
                         gasPrice: quote.transaction.gasPrice,
                     };
                     
-                    // 【v1.1 核心修正】增加更安全的 Gas 緩衝
+                    // 保留 v1.1 的 Gas 緩衝邏輯
                     if (quote.transaction.gas) {
                         const gasEstimate = ethers.BigNumber.from(quote.transaction.gas);
-                        tx.gasLimit = gasEstimate.mul(130).div(100); // 增加 30% 的緩衝
+                        tx.gasLimit = gasEstimate.mul(130).div(100);
                     }
                     
                     const txResponse = await signer.sendTransaction(tx);
@@ -187,6 +202,7 @@
                     setQuote(null);
                     setSellAmount('');
                     setBuyAmount('');
+                    setEstimatedGas(null);
                 } catch (e) { 
                     setMessage({ text: `操作失敗: ${e.reason || e.message}`, type: 'error' }); 
                 } finally {
@@ -209,7 +225,13 @@
                 <div className="w-full max-w-md mx-auto bg-gray-800 rounded-2xl p-6 shadow-2xl space-y-4">
                     <div>
                         <h1 className="text-2xl font-bold text-center text-cyan-400">0x v2 交換 App</h1>
-                        {userAddress ? <div className="text-center text-xs text-gray-500 break-all mt-2">已連接: {userAddress}</div> : <p className="text-sm text-gray-400 text-center mt-1">只使用 v2 Permit2 流程</p>}
+                        {userAddress && (
+                             <div className="text-center text-xs text-gray-500 break-all mt-2">
+                                <p>已連接: {userAddress}</p>
+                                {/* 【v1.2 新增】顯示 MATIC 餘額 */}
+                                <p className="mt-1">MATIC 餘額: {maticBalance ? parseFloat(maticBalance).toFixed(4) : '0.0'}</p>
+                            </div>
+                        )}
                     </div>
                     
                     <div className="space-y-4 bg-gray-900/50 p-4 rounded-lg">
@@ -219,7 +241,7 @@
                                 {userAddress && <div className="text-xs text-gray-400">餘額: {wethBalance ? parseFloat(wethBalance).toFixed(5) : '0.0'} <button onClick={() => setSellAmount(wethBalance)} className="ml-2 text-cyan-400 font-bold">最大</button></div>}
                             </div>
                             <div className="flex items-center bg-gray-900 rounded-lg p-3">
-                                <input type="text" placeholder="0.0" className="bg-transparent w-full text-xl focus:outline-none" value={sellAmount} onChange={e => {setSellAmount(e.target.value); setQuote(null);}} disabled={!userAddress} />
+                                <input type="text" placeholder="0.0" className="bg-transparent w-full text-xl focus:outline-none" value={sellAmount} onChange={e => {setSellAmount(e.target.value); setQuote(null); setEstimatedGas(null);}} disabled={!userAddress} />
                                 <div className="flex items-center bg-gray-700 rounded-full px-3 py-1 ml-2"><img src="https://s2.coinmarketcap.com/static/img/coins/64x64/2396.png" className="w-5 h-5 mr-2 rounded-full"/><span className="font-bold">WETH</span></div>
                             </div>
                         </div>
@@ -233,6 +255,12 @@
                                 <div className="flex items-center bg-gray-700 rounded-full px-3 py-1 ml-2"><img src="https://s2.coinmarketcap.com/static/img/coins/64x64/4943.png" className="w-5 h-5 mr-2 rounded-full"/><span className="font-bold">DAI</span></div>
                             </div>
                         </div>
+                        {/* 【v1.2 新增】顯示預估 Gas 費用 */}
+                        {estimatedGas && (
+                            <div className="text-xs text-center text-gray-400 pt-2">
+                                預估 Gas 費用: {parseFloat(estimatedGas).toFixed(6)} MATIC
+                            </div>
+                        )}
                     </div>
 
                     <details className="bg-gray-900/50 p-3 rounded-lg text-sm">
