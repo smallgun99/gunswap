@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (v1.4)</title>
+    <title>0x v2 交換 App (v1.5)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -177,20 +177,23 @@
 
                     const signature = await signer._signTypedData(domain, typesForSignature, permitMessage);
                     
-                    setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
+                    setMessage({ text: '簽名成功！正在估算 Gas...', type: 'info' });
                     
-                    const tx = {
+                    const txForEstimation = {
                         to: quote.transaction.to,
                         data: `${quote.transaction.data}${signature.substring(2)}`,
                         value: quote.transaction.value,
-                        // 【v1.4 核心修正】移除 gasPrice，讓 MetaMask 自動設定
+                    };
+
+                    // 【v1.5 核心修正】使用錢包進行最精準的 Gas 預估
+                    const estimatedGasLimit = await signer.estimateGas(txForEstimation);
+
+                    const tx = {
+                        ...txForEstimation,
+                        gasLimit: estimatedGasLimit.mul(110).div(100) // 增加 10% 的安全緩衝
                     };
                     
-                    if (quote.transaction.gas) {
-                        const gasEstimate = ethers.BigNumber.from(quote.transaction.gas);
-                        tx.gasLimit = gasEstimate.mul(130).div(100);
-                    }
-                    
+                    setMessage({ text: 'Gas 估算完成！請在錢包中確認交易...', type: 'info' });
                     const txResponse = await signer.sendTransaction(tx);
                     await txResponse.wait();
                     
@@ -257,7 +260,7 @@
                         </div>
                         {estimatedGas && (
                             <div className="text-xs text-center text-gray-400 pt-2">
-                                預估 Gas 費用: {parseFloat(estimatedGas).toFixed(6)} MATIC
+                                0x 預估 Gas 費用: {parseFloat(estimatedGas).toFixed(6)} MATIC
                             </div>
                         )}
                     </div>
