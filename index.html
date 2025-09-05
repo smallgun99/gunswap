@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (最終穩健版)</title>
+    <title>0x v2 交換 App (最終專業版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -41,6 +41,11 @@
             const [isLoading, setIsLoading] = useState(false);
             const [message, setMessage] = useState({ text: '', type: 'info' });
             const [needsApproval, setNeedsApproval] = useState(false);
+            
+            // 【系統性修正】將可選參數提升為使用者可配置的狀態
+            const [slippage, setSlippage] = useState('0.5'); // Default 0.5%
+            const [fee, setFee] = useState('0'); // Default 0%
+            const [feeRecipient, setFeeRecipient] = useState('');
 
             useEffect(() => {
                 if (window.ethereum) {
@@ -71,6 +76,7 @@
                     const address = await web3Signer.getAddress();
                     setSigner(web3Signer);
                     setUserAddress(address);
+                    setFeeRecipient(address); // 預設手續費接收者為使用者自己
                     setMessage({ text: '錢包連接成功', type: 'success' });
                     await fetchBalances(web3Signer, address);
                 } catch (e) { setMessage({ text: '連接錢包失敗', type: 'error' }); }
@@ -86,13 +92,22 @@
                 
                 try {
                     const sellAmountInWei = ethers.utils.parseUnits(sellAmount, WETH_DECIMALS);
+                    
+                    // 【系統性修正】建構一個包含所有必要和可選參數的完整請求
                     const params = new URLSearchParams({
                         sellToken: WETH_ADDRESS,
                         buyToken: DAI_ADDRESS,
                         sellAmount: sellAmountInWei.toString(),
                         taker: userAddress,
-                        permit2Address: PERMIT2_ADDRESS
+                        permit2Address: PERMIT2_ADDRESS,
+                        slippagePercentage: parseFloat(slippage) / 100 || '0.005'
                     });
+
+                    // 只有在提供了有效的接收者和費用時，才加入費用參數
+                    if (ethers.utils.isAddress(feeRecipient) && parseFloat(fee) > 0) {
+                        params.set('feeRecipient', feeRecipient);
+                        params.set('buyTokenPercentageFee', parseFloat(fee) / 100);
+                    }
                     
                     const response = await fetch(`/api/quote?${params}`);
                     const result = await response.json();
@@ -161,7 +176,7 @@
                         gasPrice: quote.transaction.gasPrice,
                     };
                     
-                    // 【核心修正】為交易增加 Gas 緩衝，解決 "likely to fail" 問題
+                    // 【系統性修正】為交易增加 Gas 緩衝，解決 "likely to fail" 問題
                     if (quote.transaction.gas) {
                         const gasEstimate = ethers.BigNumber.from(quote.transaction.gas);
                         tx.gasLimit = gasEstimate.mul(120).div(100); // 增加 20% 的緩衝
@@ -194,12 +209,14 @@
             const getMessageColor = (type) => ({'error':'text-red-400','success':'text-green-400'})[type]||'text-gray-400';
 
             return (
-                <div className="w-full max-w-md mx-auto bg-gray-800 rounded-2xl p-6 shadow-2xl space-y-6">
+                <div className="w-full max-w-md mx-auto bg-gray-800 rounded-2xl p-6 shadow-2xl space-y-4">
                     <div>
                         <h1 className="text-2xl font-bold text-center text-cyan-400">0x v2 交換 App</h1>
                         {userAddress ? <div className="text-center text-xs text-gray-500 break-all mt-2">已連接: {userAddress}</div> : <p className="text-sm text-gray-400 text-center mt-1">只使用 v2 Permit2 流程</p>}
                     </div>
-                    <div className="space-y-4">
+                    
+                    {/* 交換介面 */}
+                    <div className="space-y-4 bg-gray-900/50 p-4 rounded-lg">
                         <div>
                             <div className="flex justify-between items-center mb-1">
                                 <label className="text-sm text-gray-300">您賣出</label>
@@ -221,9 +238,30 @@
                             </div>
                         </div>
                     </div>
+
+                    {/* 【系統性修正】新增可選參數設定 */}
+                    <details className="bg-gray-900/50 p-3 rounded-lg text-sm">
+                        <summary className="cursor-pointer font-medium text-gray-400">進階設定</summary>
+                        <div className="mt-4 space-y-3">
+                             <div>
+                                <label className="block text-xs font-medium text-gray-300 mb-1">滑點容忍度 (%)</label>
+                                <input type="text" value={slippage} onChange={e => setSlippage(e.target.value)} className="bg-gray-700 rounded-md p-2 w-full text-white focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-300 mb-1">平台費用 (%)</label>
+                                <input type="text" value={fee} onChange={e => setFee(e.target.value)} className="bg-gray-700 rounded-md p-2 w-full text-white focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                            </div>
+                             <div>
+                                <label className="block text-xs font-medium text-gray-300 mb-1">費用接收地址 (預設為您自己)</label>
+                                <input type="text" value={feeRecipient} onChange={e => setFeeRecipient(e.target.value)} className="bg-gray-700 rounded-md p-2 w-full text-white focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                            </div>
+                        </div>
+                    </details>
+                    
                     <button onClick={button.action} disabled={button.disabled || isLoading} className="w-full flex justify-center items-center bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-4 rounded-lg transition disabled:bg-gray-600 disabled:cursor-not-allowed">
                         {isLoading && <div className="spinner mr-2"></div>} {button.text}
                     </button>
+                    
                     <div className={`text-center text-sm h-10 flex items-center justify-center break-all ${getMessageColor(message.type)}`}>{message.text}</div>
                 </div>
             );
