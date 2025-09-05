@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (最終修正版)</title>
+    <title>0x v2 交換 App (v1.1)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -92,7 +92,6 @@
                     const sellAmountInWei = ethers.utils.parseUnits(sellAmount, WETH_DECIMALS);
                     
                     const params = new URLSearchParams({
-                        // 【核心修正】將 chainId 加入請求
                         chainId: POLYGON_CHAIN_ID,
                         sellToken: WETH_ADDRESS,
                         buyToken: DAI_ADDRESS,
@@ -174,9 +173,10 @@
                         gasPrice: quote.transaction.gasPrice,
                     };
                     
+                    // 【v1.1 核心修正】增加更安全的 Gas 緩衝
                     if (quote.transaction.gas) {
                         const gasEstimate = ethers.BigNumber.from(quote.transaction.gas);
-                        tx.gasLimit = gasEstimate.mul(120).div(100);
+                        tx.gasLimit = gasEstimate.mul(130).div(100); // 增加 30% 的緩衝
                     }
                     
                     const txResponse = await signer.sendTransaction(tx);
