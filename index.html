@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (最終版)</title>
+    <title>0x v2 交換 App (最終穩健版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -91,6 +91,7 @@
                         buyToken: DAI_ADDRESS,
                         sellAmount: sellAmountInWei.toString(),
                         taker: userAddress,
+                        permit2Address: PERMIT2_ADDRESS
                     });
                     
                     const response = await fetch(`/api/quote?${params}`);
@@ -159,12 +160,13 @@
                         value: quote.transaction.value,
                         gasPrice: quote.transaction.gasPrice,
                     };
-
+                    
+                    // 【核心修正】為交易增加 Gas 緩衝，解決 "likely to fail" 問題
                     if (quote.transaction.gas) {
                         const gasEstimate = ethers.BigNumber.from(quote.transaction.gas);
-                        tx.gasLimit = gasEstimate.mul(120).div(100);
+                        tx.gasLimit = gasEstimate.mul(120).div(100); // 增加 20% 的緩衝
                     }
-
+                    
                     const txResponse = await signer.sendTransaction(tx);
                     await txResponse.wait();
                     
@@ -174,7 +176,6 @@
                     setSellAmount('');
                     setBuyAmount('');
                 } catch (e) { 
-                    console.error("簽名或交換失敗詳情:", e);
                     setMessage({ text: `操作失敗: ${e.reason || e.message}`, type: 'error' }); 
                 } finally {
                     setIsLoading(false);
