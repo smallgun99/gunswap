@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (v1.2)</title>
+    <title>0x v2 交換 App (v1.3)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -38,8 +38,8 @@
             const [quote, setQuote] = useState(null);
             const [wethBalance, setWethBalance] = useState('0.0');
             const [daiBalance, setDaiBalance] = useState('0.0');
-            const [maticBalance, setMaticBalance] = useState('0.0'); // 【v1.2 新增】
-            const [estimatedGas, setEstimatedGas] = useState(null); // 【v1.2 新增】
+            const [maticBalance, setMaticBalance] = useState('0.0');
+            const [estimatedGas, setEstimatedGas] = useState(null);
             const [isLoading, setIsLoading] = useState(false);
             const [message, setMessage] = useState({ text: '', type: 'info' });
             const [needsApproval, setNeedsApproval] = useState(false);
@@ -60,7 +60,6 @@
                 try {
                     const weth = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, currentSigner);
                     const dai = new ethers.Contract(DAI_ADDRESS, ERC20_ABI, currentSigner);
-                    // 【v1.2 核心修正】同時獲取 MATIC 原生代幣餘額
                     const [wethBal, daiBal, maticBal] = await Promise.all([
                         weth.balanceOf(currentAddress),
                         dai.balanceOf(currentAddress),
@@ -94,7 +93,7 @@
                 setNeedsApproval(false);
                 setBuyAmount('');
                 setQuote(null);
-                setEstimatedGas(null); // 【v1.2 新增】重置預估 Gas
+                setEstimatedGas(null);
                 setMessage({ text: '正在獲取 v2 報價...', type: 'info' });
                 
                 try {
@@ -130,7 +129,6 @@
                     setQuote(result);
                     setBuyAmount(ethers.utils.formatUnits(result.buyAmount, DAI_DECIMALS));
 
-                    // 【v1.2 核心修正】計算並設定預估 Gas 費用
                     if (result.transaction && result.transaction.gas && result.transaction.gasPrice) {
                         const gasCost = ethers.BigNumber.from(result.transaction.gas).mul(result.transaction.gasPrice);
                         setEstimatedGas(ethers.utils.formatEther(gasCost));
@@ -188,7 +186,6 @@
                         gasPrice: quote.transaction.gasPrice,
                     };
                     
-                    // 保留 v1.1 的 Gas 緩衝邏輯
                     if (quote.transaction.gas) {
                         const gasEstimate = ethers.BigNumber.from(quote.transaction.gas);
                         tx.gasLimit = gasEstimate.mul(130).div(100);
@@ -203,8 +200,13 @@
                     setSellAmount('');
                     setBuyAmount('');
                     setEstimatedGas(null);
-                } catch (e) { 
-                    setMessage({ text: `操作失敗: ${e.reason || e.message}`, type: 'error' }); 
+                } catch (e) {
+                    // 【v1.3 核心修正】優化錯誤處理
+                    let errorMessage = e.reason || e.message;
+                    if (e.message && (e.message.toLowerCase().includes('nonce') || e.message.toLowerCase().includes('transaction expired'))) {
+                        errorMessage = "交易資料已過時，請刷新報價後重試。";
+                    }
+                    setMessage({ text: `操作失敗: ${errorMessage}`, type: 'error' }); 
                 } finally {
                     setIsLoading(false);
                 }
@@ -228,7 +230,6 @@
                         {userAddress && (
                              <div className="text-center text-xs text-gray-500 break-all mt-2">
                                 <p>已連接: {userAddress}</p>
-                                {/* 【v1.2 新增】顯示 MATIC 餘額 */}
                                 <p className="mt-1">MATIC 餘額: {maticBalance ? parseFloat(maticBalance).toFixed(4) : '0.0'}</p>
                             </div>
                         )}
@@ -255,7 +256,6 @@
                                 <div className="flex items-center bg-gray-700 rounded-full px-3 py-1 ml-2"><img src="https://s2.coinmarketcap.com/static/img/coins/64x64/4943.png" className="w-5 h-5 mr-2 rounded-full"/><span className="font-bold">DAI</span></div>
                             </div>
                         </div>
-                        {/* 【v1.2 新增】顯示預估 Gas 費用 */}
                         {estimatedGas && (
                             <div className="text-xs text-center text-gray-400 pt-2">
                                 預估 Gas 費用: {parseFloat(estimatedGas).toFixed(6)} MATIC
@@ -281,9 +281,22 @@
                         </div>
                     </details>
                     
-                    <button onClick={button.action} disabled={button.disabled || isLoading} className="w-full flex justify-center items-center bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-4 rounded-lg transition disabled:bg-gray-600 disabled:cursor-not-allowed">
-                        {isLoading && <div className="spinner mr-2"></div>} {button.text}
-                    </button>
+                    <div className="flex items-center space-x-2">
+                        <button 
+                            onClick={button.action} 
+                            disabled={button.disabled || isLoading} 
+                            className={`w-full flex justify-center items-center bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-4 rounded-lg transition disabled:bg-gray-600 disabled:cursor-not-allowed`}
+                        >
+                            {isLoading && <div className="spinner mr-2"></div>}
+                            {button.text}
+                        </button>
+                        {/* 【v1.3 新增】刷新報價按鈕 */}
+                        {quote && !isLoading && (
+                            <button onClick={getQuote} title="刷新報價" className="flex-shrink-0 p-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M3 2v6h6"/><path d="M21 12A9 9 0 0 0 6 5.3L3 8"/><path d="M21 22v-6h-6"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/></svg>
+                            </button>
+                        )}
+                    </div>
                     
                     <div className={`text-center text-sm h-10 flex items-center justify-center break-all ${getMessageColor(message.type)}`}>{message.text}</div>
                 </div>
