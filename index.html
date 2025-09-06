@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (v1.7)</title>
+    <title>0x v2 交換 App (v1.9)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -177,21 +177,26 @@
 
                     const signature = await signer._signTypedData(domain, typesForSignature, permitMessage);
                     
-                    setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
+                    setMessage({ text: '簽名成功！正在估算 Gas...', type: 'info' });
                     
-                    const tx = {
-                        // 【v1.7 核心修正】明確指定交易發起者地址
+                    // 【v1.9 核心修正】建構一個用於 Gas 預估的、不含 gasPrice/gasLimit 的交易物件
+                    const txForEstimation = {
                         from: userAddress,
                         to: quote.transaction.to,
                         data: `${quote.transaction.data}${signature.substring(2)}`,
-                        value: quote.transaction.value,
+                        value: '0',
                     };
                     
-                    if (quote.transaction.gas) {
-                        const gasEstimate = ethers.BigNumber.from(quote.transaction.gas);
-                        tx.gasLimit = gasEstimate.mul(130).div(100);
-                    }
+                    // 使用錢包進行最精準的 Gas 預估
+                    const estimatedGasLimit = await signer.estimateGas(txForEstimation);
+
+                    // 建構最終的、包含準確 Gas Limit 的交易物件
+                    const tx = {
+                        ...txForEstimation,
+                        gasLimit: estimatedGasLimit.mul(120).div(100) // 增加 20% 的安全緩衝
+                    };
                     
+                    setMessage({ text: 'Gas 估算完成！請在錢包中確認交易...', type: 'info' });
                     const txResponse = await signer.sendTransaction(tx);
                     await txResponse.wait();
                     
