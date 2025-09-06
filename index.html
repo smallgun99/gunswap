@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (v1.6)</title>
+    <title>0x v2 交換 App (v1.7)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -180,10 +180,11 @@
                     setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
                     
                     const tx = {
+                        // 【v1.7 核心修正】明確指定交易發起者地址
+                        from: userAddress,
                         to: quote.transaction.to,
                         data: `${quote.transaction.data}${signature.substring(2)}`,
                         value: quote.transaction.value,
-                        // 【v1.6 核心修正】移除 gasPrice，讓 MetaMask 自動設定
                     };
                     
                     if (quote.transaction.gas) {
