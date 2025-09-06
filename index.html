@@ -177,23 +177,20 @@
 
                     const signature = await signer._signTypedData(domain, typesForSignature, permitMessage);
                     
-                    setMessage({ text: '簽名成功！正在估算 Gas...', type: 'info' });
+                    setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
                     
-                    const txForEstimation = {
+                    const tx = {
                         to: quote.transaction.to,
                         data: `${quote.transaction.data}${signature.substring(2)}`,
                         value: quote.transaction.value,
-                    };
-
-                    const estimatedGasLimit = await signer.estimateGas(txForEstimation);
-
-                    const tx = {
-                        ...txForEstimation,
                         // 【v1.6 核心修正】移除 gasPrice，讓 MetaMask 自動設定
-                        gasLimit: estimatedGasLimit.mul(110).div(100)
                     };
                     
-                    setMessage({ text: 'Gas 估算完成！請在錢包中確認交易...', type: 'info' });
+                    if (quote.transaction.gas) {
+                        const gasEstimate = ethers.BigNumber.from(quote.transaction.gas);
+                        tx.gasLimit = gasEstimate.mul(130).div(100);
+                    }
+                    
                     const txResponse = await signer.sendTransaction(tx);
                     await txResponse.wait();
                     
