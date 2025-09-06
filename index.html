@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (v1.5)</title>
+    <title>0x v2 交換 App (v1.6)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -185,12 +185,12 @@
                         value: quote.transaction.value,
                     };
 
-                    // 【v1.5 核心修正】使用錢包進行最精準的 Gas 預估
                     const estimatedGasLimit = await signer.estimateGas(txForEstimation);
 
                     const tx = {
                         ...txForEstimation,
-                        gasLimit: estimatedGasLimit.mul(110).div(100) // 增加 10% 的安全緩衝
+                        // 【v1.6 核心修正】移除 gasPrice，讓 MetaMask 自動設定
+                        gasLimit: estimatedGasLimit.mul(110).div(100)
                     };
                     
                     setMessage({ text: 'Gas 估算完成！請在錢包中確認交易...', type: 'info' });
