@@ -1,6 +1,6 @@
 // Vercel Serverless Function, Node.js environment
 // v2.0: A pure, robust proxy that only forwards requests without modification,
-// as defined in our system design document.
+// precisely replicating the successful pattern.
 export default async function handler(req, res) {
     // 1. Correctly parse URL and search parameters from the incoming request from the frontend
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
