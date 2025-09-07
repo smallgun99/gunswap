@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (v2.0 Oku 複製版)</title>
+    <title>0x v2 交換 App (v2.1 Oku 複製版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -20,7 +20,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useCallback } = React;
 
         const POLYGON_CHAIN_ID = 137;
         const WETH_ADDRESS = '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619';
@@ -30,6 +30,20 @@
         const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3';
         const ERC20_ABI = ["function allowance(address owner, address spender) view returns (uint256)", "function approve(address spender, uint256 amount) returns (bool)", "function balanceOf(address account) view returns (uint256)"];
 
+        // Custom hook for debouncing
+        function useDebounce(value, delay) {
+            const [debouncedValue, setDebouncedValue] = useState(value);
+            useEffect(() => {
+                const handler = setTimeout(() => {
+                    setDebouncedValue(value);
+                }, delay);
+                return () => {
+                    clearTimeout(handler);
+                };
+            }, [value, delay]);
+            return debouncedValue;
+        }
+
         function App() {
             const [signer, setSigner] = useState(null);
             const [userAddress, setUserAddress] = useState(null);
@@ -38,27 +52,22 @@
             const [quote, setQuote] = useState(null);
             const [wethBalance, setWethBalance] = useState('0.0');
             const [isLoading, setIsLoading] = useState(false);
+            const [isSwapping, setIsSwapping] = useState(false);
             const [message, setMessage] = useState({ text: '請先連接錢包', type: 'info' });
             const [needsApproval, setNeedsApproval] = useState(false);
 
-            useEffect(() => {
-                if (window.ethereum) {
-                    const handler = (accounts) => accounts.length > 0 ? connectWallet() : (setUserAddress(null), setSigner(null), setMessage({ text: '請先連接錢包', type: 'info' }));
-                    window.ethereum.on('accountsChanged', handler);
-                    return () => window.ethereum.removeListener('accountsChanged', handler);
-                }
-            }, []);
+            const debouncedSellAmount = useDebounce(sellAmount, 500);
 
-            const fetchBalance = async (currentSigner, currentAddress) => {
+            const fetchBalance = useCallback(async (currentSigner, currentAddress) => {
                 if (!currentSigner || !currentAddress) return;
                 try {
                     const weth = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, currentSigner);
                     const wethBal = await weth.balanceOf(currentAddress);
                     setWethBalance(ethers.utils.formatUnits(wethBal, WETH_DECIMALS));
-                } catch (e) { setMessage({ text: '讀取餘額失敗', type: 'error' }); }
-            };
+                } catch (e) { console.error("讀取餘額失敗:", e); }
+            }, []);
 
-            const connectWallet = async () => {
+            const connectWallet = useCallback(async () => {
                 try {
                     const provider = new ethers.providers.Web3Provider(window.ethereum);
                     await provider.send("eth_requestAccounts", []);
@@ -68,34 +77,33 @@
                     const address = await web3Signer.getAddress();
                     setSigner(web3Signer);
                     setUserAddress(address);
-                    setMessage({ text: '錢包已連接', type: 'success' });
+                    setMessage({ text: '', type: 'success' });
                     await fetchBalance(web3Signer, address);
                 } catch (e) { setMessage({ text: '連接錢包失敗', type: 'error' }); }
-            };
-            
-            // Debounce function to prevent API calls on every keystroke
+            }, [fetchBalance]);
+
             useEffect(() => {
-                const handler = setTimeout(() => {
-                    if (sellAmount && parseFloat(sellAmount) > 0 && signer) {
-                        getQuote();
-                    } else {
-                        setBuyAmount('');
-                        setQuote(null);
+                if (window.ethereum) {
+                    const handler = (accounts) => {
+                        if (accounts.length > 0 && accounts[0] !== userAddress) {
+                            connectWallet();
+                        } else if (accounts.length === 0) {
+                             setUserAddress(null); setSigner(null); setMessage({ text: '請先連接錢包', type: 'info' });
+                        }
                     }
-                }, 500); // 500ms delay
-
-                return () => clearTimeout(handler);
-            }, [sellAmount, signer]);
-
-
-            const getQuote = async () => {
-                if (!sellAmount || parseFloat(sellAmount) <= 0 || !signer) return;
+                    window.ethereum.on('accountsChanged', handler);
+                    return () => window.ethereum.removeListener('accountsChanged', handler);
+                }
+            }, [userAddress, connectWallet]);
+            
+            const getQuote = useCallback(async () => {
+                if (!debouncedSellAmount || parseFloat(debouncedSellAmount) <= 0 || !signer) return;
                 setIsLoading(true);
                 setNeedsApproval(false);
                 setMessage({ text: '', type: 'info' });
                 
                 try {
-                    const sellAmountInWei = ethers.utils.parseUnits(sellAmount, WETH_DECIMALS);
+                    const sellAmountInWei = ethers.utils.parseUnits(debouncedSellAmount, WETH_DECIMALS);
                     
                     const params = new URLSearchParams({
                         chainId: POLYGON_CHAIN_ID,
@@ -131,14 +139,19 @@
                 } catch (error) {
                     setMessage({ text: error.message, type: 'error' });
                     setBuyAmount('');
+                    setQuote(null);
                 } finally {
                     setIsLoading(false);
                 }
-            };
+            }, [debouncedSellAmount, signer, userAddress]);
+
+             useEffect(() => {
+                getQuote();
+            }, [debouncedSellAmount, getQuote]);
 
             const approve = async () => {
                 if (!quote) return;
-                setIsLoading(true);
+                setIsSwapping(true);
                 setMessage({ text: '請在錢包中確認授權...', type: 'info' });
                 try {
                     const wethContract = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, signer);
@@ -147,13 +160,13 @@
                     setNeedsApproval(false);
                     setMessage({ text: '授權成功！', type: 'success' });
                 } catch (e) { setMessage({ text: '授權失敗', type: 'error' }); } finally {
-                    setIsLoading(false);
+                    setIsSwapping(false);
                 }
             };
             
             const swap = async () => {
                 if (!quote) return;
-                setIsLoading(true);
+                setIsSwapping(true);
                 setMessage({ text: '請在錢包中簽名 (免費)...', type: 'info' });
 
                 try {
@@ -165,13 +178,11 @@
                     
                     setMessage({ text: '簽名成功！請在錢包中確認交易...', type: 'info' });
                     
-                    // 【v2.0 核心修正】直接使用 API 回傳的交易物件，只附加簽名
                     const tx = {
                         ...quote.transaction,
                         data: `${quote.transaction.data}${signature.substring(2)}`,
                     };
                     
-                    // 【v2.0 核心修正】將 Gas 處理權完全交還給錢包
                     delete tx.gasPrice;
                     delete tx.gas;
 
@@ -186,7 +197,7 @@
                 } catch (e) { 
                     setMessage({ text: `操作失敗: ${e.reason || '使用者拒絕交易'}`, type: 'error' }); 
                 } finally {
-                    setIsLoading(false);
+                    setIsSwapping(false);
                 }
             };
 
@@ -195,9 +206,10 @@
                     return <button onClick={connectWallet} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl transition">連接錢包</button>;
                 }
                 if (needsApproval) {
-                    return <button onClick={approve} disabled={isLoading} className="w-full flex justify-center items-center bg-pink-600 hover:bg-pink-700 text-white font-bold py-4 px-4 rounded-xl transition disabled:opacity-50">{isLoading ? <div className="spinner"></div> : '授權 WETH'}</button>;
+                    return <button onClick={approve} disabled={isSwapping} className="w-full flex justify-center items-center bg-pink-600 hover:bg-pink-700 text-white font-bold py-4 px-4 rounded-xl transition disabled:opacity-50">{isSwapping ? <div className="spinner"></div> : '授權 WETH'}</button>;
                 }
-                return <button onClick={swap} disabled={isLoading || !quote} className="w-full flex justify-center items-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl transition disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed">{isLoading && quote ? <div className="spinner"></div> : 'Swap'}</button>;
+                const swapDisabled = isSwapping || isLoading || !quote || !buyAmount;
+                return <button onClick={swap} disabled={swapDisabled} className="w-full flex justify-center items-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl transition disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed">{isSwapping ? <div className="spinner"></div> : 'Swap'}</button>;
             };
 
             return (
@@ -225,7 +237,7 @@
                     <div className="p-2 bg-gray-900 rounded-lg">
                         <div className="flex justify-between items-center mb-1 text-sm text-gray-400 px-1">
                             <span>您買入</span>
-                            <span>{quote ? `~ $${(parseFloat(buyAmount) * parseFloat(quote.buyTokenToEthRate)).toFixed(2)}` : ''}</span>
+                            {isLoading ? <div className="spinner w-4 h-4"></div> : <span>{quote ? `~ $${(parseFloat(buyAmount) * parseFloat(quote.buyTokenToEthRate || '0')).toFixed(2)}` : ''}</span>}
                         </div>
                         <div className="flex items-center">
                             <div className="w-full text-3xl text-white p-1">{buyAmount ? parseFloat(buyAmount).toFixed(5) : '0.0'}</div>
