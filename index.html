@@ -171,26 +171,18 @@
 
                     const signature = await signer._signTypedData(domain, typesForSignature, permitMessage);
                     
-                    setMessage({ text: '簽名成功！正在估算 Gas...', type: 'info' });
+                    setMessage({ text: '簽名成功！正在送出交易...', type: 'info' });
                     
-                    // 【v2.0 系統性修正】建構一個用於 Gas 預估的、絕對完整的交易物件
-                    const txForEstimation = {
+                    // 【v2.0 系統性修正】建構一個絕對完整的交易物件
+                    const tx = {
                         from: userAddress,
                         to: quote.transaction.to,
                         data: `${quote.transaction.data}${signature.substring(2)}`,
                         value: '0',
+                        gasLimit: ethers.BigNumber.from(quote.transaction.gas).mul(130).div(100) // 信任 0x 的預估並增加 30% 緩衝
+                        // gasPrice 被完全移除，讓 MetaMask 自動處理
                     };
                     
-                    const estimatedGasLimit = await signer.estimateGas(txForEstimation);
-
-                    // 建構最終的、包含準確 Gas Limit 的交易物件
-                    const tx = {
-                        ...txForEstimation,
-                        gasLimit: estimatedGasLimit.mul(120).div(100), // 增加 20% 的安全緩衝
-                        // Gas Price 完全由錢包自動設定
-                    };
-                    
-                    setMessage({ text: 'Gas 估算完成！請在錢包中確認交易...', type: 'info' });
                     const txResponse = await signer.sendTransaction(tx);
                     await txResponse.wait();
                     
