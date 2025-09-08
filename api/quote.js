@@ -1,5 +1,5 @@
 // Vercel Serverless Function, Node.js environment
-// v2.1: A pure, robust proxy that only forwards requests without modification,
+// v2.2: A pure, robust proxy that only forwards requests without modification,
 // precisely replicating the successful pattern observed from Oku.trade.
 export default async function handler(req, res) {
     // 1. Correctly parse URL and search parameters from the incoming request from the frontend
