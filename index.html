@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>0x v2 交換 App (v2.1 Oku 複製版)</title>
+    <title>0x v2 交換 App (v2.2 Oku 複製版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -30,16 +30,11 @@
         const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3';
         const ERC20_ABI = ["function allowance(address owner, address spender) view returns (uint256)", "function approve(address spender, uint256 amount) returns (bool)", "function balanceOf(address account) view returns (uint256)"];
 
-        // Custom hook for debouncing
         function useDebounce(value, delay) {
             const [debouncedValue, setDebouncedValue] = useState(value);
             useEffect(() => {
-                const handler = setTimeout(() => {
-                    setDebouncedValue(value);
-                }, delay);
-                return () => {
-                    clearTimeout(handler);
-                };
+                const handler = setTimeout(() => { setDebouncedValue(value); }, delay);
+                return () => { clearTimeout(handler); };
             }, [value, delay]);
             return debouncedValue;
         }
@@ -112,7 +107,7 @@
                         sellAmount: sellAmountInWei.toString(),
                         taker: userAddress,
                         permit2Address: PERMIT2_ADDRESS,
-                        slippagePercentage: '0.01' // Standard 1% slippage
+                        slippagePercentage: '0.01'
                     });
                     
                     const response = await fetch(`/api/quote?${params}`);
@@ -178,13 +173,15 @@
                     
                     setMessage({ text: '簽名成功！請在錢包中確認交易...', type: 'info' });
                     
+                    // 【v2.2 核心修正】完全複製 Oku.trade 的交易物件結構
                     const tx = {
-                        ...quote.transaction,
+                        from: userAddress,
+                        to: quote.transaction.to,
                         data: `${quote.transaction.data}${signature.substring(2)}`,
+                        value: '0',
+                        gasLimit: ethers.BigNumber.from(quote.transaction.gas).mul(130).div(100), // 信任 API 的預估並增加 30% 緩衝
+                        // gasPrice 被完全省略，讓 MetaMask 自動處理
                     };
-                    
-                    delete tx.gasPrice;
-                    delete tx.gas;
 
                     const txResponse = await signer.sendTransaction(tx);
                     await txResponse.wait();
